@@ -68,7 +68,6 @@ struct ContentView: View {
                 LazyVStack(spacing: 0) {
                     deviceOverview
                         .padding(.horizontal, SeedSpacing.globalGutter)
-                        .background(SeedColor.layerDefault)
 
                     LazyVStack(spacing: SeedSpacing.x6) {
                         if let answer = viewModel.lastAnswer {
@@ -83,7 +82,7 @@ struct ContentView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .background(SeedColor.layerBasement)
+            .background(SeedColor.layerDefault)
             .toolbar(.hidden, for: .navigationBar)
         }
     }
@@ -127,7 +126,7 @@ struct ContentView: View {
             }
 
             if viewModel.isGlassesAvailable {
-                HStack(spacing: SeedSpacing.x3) {
+                HStack(spacing: SeedSpacing.x7) {
                     deviceActionButton(
                         symbol: "camera",
                         label: sceneButtonTitle,
@@ -222,7 +221,14 @@ struct ContentView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: SeedSpacing.x2) {
+            ZStack {
+                Circle()
+                    .fill(
+                        isDisabled
+                            ? SeedColor.neutralWeak
+                            : (isCritical ? SeedColor.critical : (isPrimary ? SeedColor.brand : SeedColor.neutralWeak))
+                    )
+
                 if isLoading {
                     ProgressView()
                         .controlSize(.small)
@@ -233,21 +239,17 @@ struct ContentView: View {
                         )
                 } else {
                     Image(systemName: symbol)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(
+                            isDisabled
+                                ? SeedColor.fgDisabled
+                                : (isPrimary || isCritical ? SeedColor.fgInverted : SeedColor.fgNeutral)
+                        )
                 }
-
-                Text(label)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: 56, height: 56)
         }
-        .buttonStyle(
-            SeedActionButtonStyle(
-                variant: isCritical ? .criticalSolid : (isPrimary ? .brandSolid : .neutralWeak),
-                size: .large
-            )
-        )
+        .buttonStyle(.plain)
         .disabled(isDisabled)
         .accessibilityLabel(label)
         .accessibilityHint(hint)
