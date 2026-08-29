@@ -78,8 +78,10 @@ struct GeminiService {
 
             단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
             일정, 사용자 메모리, 아이디어 정리 요청에는 간결하고 실용적으로 답하세요.
-            사용자 메모리 저장은 사용자가 "이건 기억해줘", "방금 말한 내용을 내 메모리에 저장해줘"처럼
-            저장할 대상을 가리키며 명확하게 요청한 경우에만 shouldSaveUserMemory를 true로 설정하세요.
+            "기억해줘", "메모해줘", "기록해줘"는 모두 동일한 사용자 메모리 저장 요청입니다.
+            사용자가 이 표현들로 저장할 대상이나 직전 대화 내용을 명확하게 요청하면 shouldSaveUserMemory를 반드시 true로 설정하고
+            userMemory에 저장할 내용만 정확히 추출하세요. "내일 3시 병원 예약 메모해줘", "이거 기록해줘"처럼 말한 경우가 해당합니다.
+            저장 요청을 받았을 때 shouldSaveUserMemory를 false로 두거나 저장했다고 말로만 답하지 마세요.
             단순히 기억, 메모, 저장이라는 단어를 언급하거나 기억에 관한 질문을 했다는 이유만으로 저장하지 마세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
             userMemory.category는 반드시 general, schedule, parking 중 하나로 정하세요.
@@ -106,7 +108,9 @@ struct GeminiService {
             사용자가 안경 카메라로 본 장면에 관해 요청했습니다. 사용자의 질문에 맞춰 한국어로 2~3문장 안에서 답하세요. 보이는 물체, 읽을 수 있는 핵심 텍스트,
             사용자가 다음에 취할 수 있는 실용적인 행동을 우선해서 말하세요. 확실하지 않은 정보는 추측이라고 밝혀야 합니다.
             사진은 지금 이 요청을 처리하기 위해 새로 촬영된 것이므로 action은 반드시 answer로 설정하세요.
-            사용자 메모리 저장은 사용자가 저장할 대상을 가리키며 명확하게 요청한 경우에만 shouldSaveUserMemory를 true로 설정하세요.
+            "기억해줘", "메모해줘", "기록해줘"는 모두 동일한 사용자 메모리 저장 요청입니다.
+            사용자가 사진 속 정보나 대화 내용을 이 표현들로 저장해 달라고 하면 shouldSaveUserMemory를 반드시 true로 설정하고 userMemory를 채우세요.
+            저장했다고 말로만 답하지 마세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
             userMemory.category는 general, schedule, parking 중 하나여야 합니다. 장면에서 파악한 차량 주차 위치는 parking으로 분류하세요.
             """,
@@ -268,6 +272,7 @@ struct GeminiService {
           "weatherDetail": { "day": "today | tomorrow", "period": "current | morning | afternoon | evening | night | day" } 또는 null
         }
 
+        "기억해줘", "메모해줘", "기록해줘"는 같은 저장 의도입니다. 이 중 하나로 저장을 요청하면 shouldSaveUserMemory는 반드시 true이고 userMemory는 null이 아니어야 합니다.
         shouldSaveUserMemory가 false이면 userMemory는 반드시 null입니다. true이면 사용자가 저장하려는 내용만 남기고,
         추측하거나 빠진 정보를 보완하지 마세요. 저장할 핵심을 판단할 수 없으면 false로 두고 짧은 확인 질문을 하세요.
         """

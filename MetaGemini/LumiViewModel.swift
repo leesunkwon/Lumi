@@ -506,9 +506,9 @@ final class LumiViewModel {
             lastAnswer = result.answer
         }
 
-        if result.shouldSaveUserMemory,
-           let userMemory = result.userMemory,
-           hasExplicitUserMemorySaveRequest(in: userMessage) {
+        let hasExplicitMemoryRequest = hasExplicitUserMemorySaveRequest(in: userMessage)
+        if let userMemory = result.userMemory,
+           hasExplicitMemoryRequest {
             saveUserMemory(
                 VoiceMemo(
                     title: userMemory.title,
@@ -529,10 +529,12 @@ final class LumiViewModel {
             "방금말한", "지금말한", "앞에서말한", "앞의내용"
         ].contains { compactText.contains($0) }
         let requestsRemembering = [
-            "기억해", "기억해줘", "기억해둬", "기억해놓", "메모해", "메모리에저장", "메모리저장", "메모리에남겨"
+            "기억해", "기억해줘", "기억해둬", "기억해놓", "메모해", "기록해", "기록해줘", "기록해둬",
+            "메모리에저장", "메모리저장", "메모리에남겨"
         ].contains { compactText.contains($0) }
         let directRememberRequest = [
-            "기억해줘", "기억해둬", "기억해놓", "메모해줘", "메모리에저장", "메모리저장", "메모리에남겨"
+            "기억해줘", "기억해둬", "기억해놓", "메모해줘", "메모해둬", "기록해줘", "기록해둬",
+            "저장해줘", "메모리에저장", "메모리저장", "메모리에남겨"
         ].contains { compactText.contains($0) }
         let namesUserMemory = ["사용자메모리", "내메모리", "개인메모리"].contains {
             compactText.contains($0)
@@ -540,9 +542,10 @@ final class LumiViewModel {
         let namesCategorizedMemory = [
             "주차", "주차위치", "할일", "해야할일", "일정", "약속", "마감"
         ].contains { compactText.contains($0) }
-        let asksToStore = ["저장", "기억", "남겨"].contains { compactText.contains($0) }
+        let asksToStore = ["저장", "기억", "메모", "기록", "남겨"].contains { compactText.contains($0) }
 
-        return (refersToContent && requestsRemembering)
+        return directRememberRequest
+            || (refersToContent && requestsRemembering)
             || (namesUserMemory && asksToStore)
             || (namesCategorizedMemory && directRememberRequest)
     }
