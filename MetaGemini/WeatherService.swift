@@ -124,8 +124,13 @@ final class WeatherService {
         let grid = KMAForecastGrid(location.coordinate)
 
         if request.period == .current {
-            let observations = try await fetchObservations(grid: grid, now: now)
-            return currentWeatherAnswer(from: observations)
+            do {
+                let observations = try await fetchObservations(grid: grid, now: now)
+                return currentWeatherAnswer(from: observations)
+            } catch WeatherServiceError.forecastUnavailable {
+                let forecasts = try await fetchShortForecast(grid: grid, now: now)
+                return try currentForecastAnswer(from: forecasts, now: now)
+            }
         }
 
         let items = try await fetchShortForecast(grid: grid, now: now)
@@ -133,25 +138,46 @@ final class WeatherService {
     }
 
     private func fetchObservations(grid: KMAForecastGrid, now: Date) async throws -> [KMAWeatherItem] {
-        let base = latestObservationBase(for: now)
-        return try await fetch(
-            endpoint: "getUltraSrtNcst",
-            baseDate: base.date,
-            baseTime: base.time,
-            grid: grid,
-            numberOfRows: 60
-        )
+        var lastError: Error?
+
+        for offset in stride(from: 45, through: 165, by: 60) {
+            let base = latestObservationBase(for: now.addingTimeInterval(-Double(offset - 45) * 60))
+            do {
+                return try await fetch(
+                    endpoint: "getUltraSrtNcst",
+                    baseDate: base.date,
+                    baseTime: base.time,
+                    grid: grid,
+                    numberOfRows: 60
+                )
+            } catch WeatherServiceError.forecastUnavailable {
+                lastError = WeatherServiceError.forecastUnavailable
+            }
+        }
+
+        throw lastError ?? WeatherServiceError.forecastUnavailable
     }
 
     private func fetchShortForecast(grid: KMAForecastGrid, now: Date) async throws -> [KMAWeatherItem] {
-        let base = latestShortForecastBase(for: now)
-        return try await fetch(
-            endpoint: "getVilageFcst",
-            baseDate: base.date,
-            baseTime: base.time,
-            grid: grid,
-            numberOfRows: 1_000
-        )
+        var lastError: Error?
+
+        for offset in stride(from: 0, through: 21, by: 3) {
+            let baseDate = now.addingTimeInterval(-Double(offset) * 60 * 60)
+            let base = latestShortForecastBase(for: baseDate)
+            do {
+                return try await fetch(
+                    endpoint: "getVilageFcst",
+                    baseDate: base.date,
+                    baseTime: base.time,
+                    grid: grid,
+                    numberOfRows: 1_000
+                )
+            } catch WeatherServiceError.forecastUnavailable {
+                lastError = WeatherServiceError.forecastUnavailable
+            }
+        }
+
+        throw lastError ?? WeatherServiceError.forecastUnavailable
     }
 
     private func fetch(
@@ -200,6 +226,9 @@ final class WeatherService {
         }
         guard let decodedResponse else {
             throw WeatherServiceError.invalidResponse
+        }
+        if decodedResponse.response.header.resultMsg == "NO_DATA" {
+            throw WeatherServiceError.forecastUnavailable
         }
         guard decodedResponse.response.header.resultCode == "00" else {
             throw WeatherServiceError.serviceError(decodedResponse.response.header.resultMsg ?? "알 수 없는 오류")
@@ -264,6 +293,36 @@ final class WeatherService {
         }
 
         return periodForecastAnswer(values: values, day: request.day, period: request.period)
+    }
+
+    private func currentForecastAnswer(from items: [KMAWeatherItem], now: Date) throws -> String {
+        let dateKey = dateString(now)
+        let dayItems = items.filter { $0.forecastDate == dateKey }
+        let currentHour = koreanCalendar.component(.hour, from: now)
+
+        guard let values = forecastValues(near: currentHour, in: dayItems) else {
+            throw WeatherServiceError.forecastUnavailable
+        }
+
+        let condition = precipitationDescription(values["PTY"]) ?? skyDescription(values["SKY"])
+        let temperature = values["TMP"].flatMap(temperatureText)
+        let rainChance = values["POP"]
+            .flatMap(Double.init)
+            .map { Int($0.rounded()) }
+
+        var details = [String]()
+        if let condition {
+            details.append(condition)
+        }
+        if let temperature {
+            details.append("기온은 \(temperature)")
+        }
+        if let rainChance {
+            details.append("비가 올 확률은 \(rainChance)퍼센트")
+        }
+
+        let summary = details.isEmpty ? "예보를 확인했어요" : details.joined(separator: ", ")
+        return "현재 위치 기준 지금은 \(summary)예요."
     }
 
     private func dailyForecastAnswer(from items: [KMAWeatherItem], day: WeatherTargetDay) -> String {
