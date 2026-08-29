@@ -10,47 +10,44 @@ import UIKit
 
 enum SeedColor {
     // Foreground
-    static let fgNeutral = adaptive(light: 0x1A1C20, dark: 0xF3F4F5)
-    static let fgMuted = adaptive(light: 0x555D6D, dark: 0xDCDEE3)
-    static let fgSubtle = adaptive(light: 0x868B94, dark: 0xB0B3BA)
-    static let fgDisabled = adaptive(light: 0xD1D3D8, dark: 0x5B606A)
-    static let fgInverted = adaptive(light: 0xFFFFFF, dark: 0xF7F8F9)
+    static let fgNeutral = adaptive(light: 0x1D1D1F, dark: 0xF5F5F7)
+    static let fgMuted = adaptive(light: 0x6E6E73, dark: 0xD2D2D7)
+    static let fgSubtle = adaptive(light: 0x86868B, dark: 0xA1A1A6)
+    static let fgDisabled = adaptive(light: 0xA1A1A6, dark: 0x6E6E73)
+    static let fgInverted = adaptive(light: 0xFFFFFF, dark: 0xF5F5F7)
 
-    // Lumi brand role. SEED의 brand 역할에 Lumi의 보라색 팔레트를 적용합니다.
-    static let brand = adaptive(light: 0x6D50CB, dark: 0xA78DF0)
-    static let brandPressed = adaptive(light: 0x50379B, dark: 0x8969EA)
-    static let brandWeak = adaptive(light: 0xEFEAFE, dark: 0x28213B)
-    static let brandWeakPressed = adaptive(light: 0xE1D8FF, dark: 0x3B2873)
+    // Lumi의 행동과 상태는 색상을 추가하지 않고 명도 차이로만 구분합니다.
+    static let brand = adaptive(light: 0x1D1D1F, dark: 0xF5F5F7)
+    static let brandPressed = adaptive(light: 0x333333, dark: 0xD2D2D7)
+    static let onBrand = adaptive(light: 0xFFFFFF, dark: 0x1D1D1F)
+    static let brandWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
+    static let brandWeakPressed = adaptive(light: 0xE8E8ED, dark: 0x3A3A3C)
 
-    // Semantic roles
-    static let positive = adaptive(light: 0x079171, dark: 0x22B27F)
-    static let positiveWeak = adaptive(light: 0xEDFAF6, dark: 0x202926)
-    static let informative = adaptive(light: 0x217CF9, dark: 0x41A2F9)
-    static let informativeWeak = adaptive(light: 0xEFF6FF, dark: 0x202742)
-    static let warning = adaptive(light: 0x9B7821, dark: 0xCA901C)
-    static let warningWeak = adaptive(light: 0xFFF7DE, dark: 0x302819)
-    static let critical = adaptive(light: 0xFA342C, dark: 0xFF6E60)
-    static let criticalPressed = adaptive(light: 0xCA1D13, dark: 0xFA342C)
-    static let criticalWeak = adaptive(light: 0xFDF0F0, dark: 0x322323)
-    static let magicWeak = adaptive(light: 0xF9F2EE, dark: 0x201F1F)
+    // Semantic roles retain their meaning through copy and icons, not hue.
+    static let positive = adaptive(light: 0x1D1D1F, dark: 0xF5F5F7)
+    static let positiveWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
+    static let informative = adaptive(light: 0x1D1D1F, dark: 0xF5F5F7)
+    static let informativeWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
+    static let warning = adaptive(light: 0x1D1D1F, dark: 0xF5F5F7)
+    static let warningWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
+    static let critical = adaptive(light: 0x1D1D1F, dark: 0xF5F5F7)
+    static let criticalPressed = adaptive(light: 0x333333, dark: 0xD2D2D7)
+    static let criticalWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
+    static let magicWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
 
     // Layer and stroke
-    static let layerBasement = adaptive(light: 0xF3F4F5, dark: 0x000000)
-    static let layerDefault = adaptive(light: 0xFFFFFF, dark: 0x16171B)
-    static let layerFill = adaptive(light: 0xF7F8F9, dark: 0x1D2025)
-    static let layerFloating = adaptive(light: 0xFFFFFF, dark: 0x1D2025)
-    static let neutralSolid = adaptive(light: 0x1A1C20, dark: 0x2B2E35)
-    static let neutralSolidPressed = adaptive(light: 0x2A3038, dark: 0x393D46)
-    static let neutralWeak = adaptive(light: 0xF3F4F5, dark: 0x2B2E35)
-    static let neutralWeakPressed = adaptive(light: 0xEEEFF1, dark: 0x393D46)
-    static let strokeSubtle = adaptive(light: 0xE6E7EA, dark: 0x2B2E35)
-    static let strokeWeak = adaptive(light: 0xDCDEE3, dark: 0x393D46)
+    static let layerBasement = adaptive(light: 0xF5F5F7, dark: 0x000000)
+    static let layerDefault = adaptive(light: 0xFFFFFF, dark: 0x1D1D1F)
+    static let layerFill = adaptive(light: 0xFAFAFC, dark: 0x2A2A2C)
+    static let layerFloating = adaptive(light: 0xFFFFFF, dark: 0x2A2A2C)
+    static let neutralSolid = adaptive(light: 0x1D1D1F, dark: 0x2A2A2C)
+    static let neutralSolidPressed = adaptive(light: 0x333333, dark: 0x3A3A3C)
+    static let neutralWeak = adaptive(light: 0xF5F5F7, dark: 0x2A2A2C)
+    static let neutralWeakPressed = adaptive(light: 0xE8E8ED, dark: 0x3A3A3C)
+    static let strokeSubtle = adaptive(light: 0xE0E0E0, dark: 0x3A3A3C)
+    static let strokeWeak = adaptive(light: 0xD2D2D7, dark: 0x4A4A4C)
 
-    static let magicGradient = LinearGradient(
-        colors: [brandWeak, magicWeak, informativeWeak],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static let magicGradient = brandWeak
 
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(
@@ -163,7 +160,9 @@ struct SeedActionButtonStyle: ButtonStyle {
         guard isEnabled else { return SeedColor.fgDisabled }
 
         switch variant {
-        case .brandSolid, .neutralSolid, .criticalSolid:
+        case .brandSolid, .criticalSolid:
+            return SeedColor.onBrand
+        case .neutralSolid:
             return SeedColor.fgInverted
         case .neutralWeak, .ghost:
             return SeedColor.fgNeutral
@@ -307,13 +306,7 @@ struct LumiMark: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [SeedColor.brand, SeedColor.informative],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(SeedColor.neutralSolid)
             Image(systemName: "sparkles")
                 .font(.system(size: size * 0.43, weight: .bold))
                 .foregroundStyle(.white)
@@ -337,11 +330,6 @@ struct SeedSurfaceModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
             }
-            .shadow(
-                color: floating ? Color.black.opacity(0.08) : .clear,
-                radius: floating ? 10 : 0,
-                y: floating ? 2 : 0
-            )
     }
 }
 

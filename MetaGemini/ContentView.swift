@@ -207,6 +207,7 @@ struct ContentView: View {
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(maxWidth: 220)
+                .shadow(color: .black.opacity(0.2), radius: 15, x: 3, y: 5)
                 .offset(y: -14)
                 .frame(height: 116)
                 .clipped()
@@ -354,7 +355,7 @@ struct ContentView: View {
                         .foregroundStyle(
                             isDisabled
                                 ? SeedColor.fgDisabled
-                                : (isPrimary || isCritical ? SeedColor.fgInverted : SeedColor.fgNeutral)
+                                : (isPrimary || isCritical ? SeedColor.onBrand : SeedColor.fgNeutral)
                         )
                 }
             }
@@ -461,7 +462,6 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .stroke(.white.opacity(0.1), lineWidth: 0.5)
         }
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 7)
         .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isAnswerIslandExpanded)
     }
 
@@ -860,7 +860,7 @@ private struct ConversationDetailView: View {
             ) {
                 Text(message.text)
                     .font(.body)
-                    .foregroundStyle(message.role == .user ? SeedColor.fgInverted : SeedColor.fgNeutral)
+                    .foregroundStyle(message.role == .user ? SeedColor.onBrand : SeedColor.fgNeutral)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SeedSpacing.x3)
                     .padding(.vertical, SeedSpacing.x2_5)
