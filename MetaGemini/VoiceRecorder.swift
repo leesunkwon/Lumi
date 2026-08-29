@@ -24,12 +24,16 @@ enum VoiceRecorderError: LocalizedError {
 final class VoiceRecorder {
     private var recorder: AVAudioRecorder?
 
-    func start() async throws {
+    func prepareForRecording() async throws {
         guard await hasRecordPermission() else {
             throw VoiceRecorderError.microphonePermissionDenied
         }
 
         try await GlassesAudioRoute.activate()
+    }
+
+    func startPreparedRecording() throws {
+        guard recorder == nil else { return }
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("lumi-question-\(UUID().uuidString)")

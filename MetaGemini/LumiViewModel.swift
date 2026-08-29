@@ -57,10 +57,12 @@ final class LumiViewModel {
     @ObservationIgnored private let wearables: WearablesInterface
     @ObservationIgnored private let voiceRecorder = VoiceRecorder()
     @ObservationIgnored private let speechOutput = SpeechOutput()
+    @ObservationIgnored private let interactionSounds = InteractionSoundPlayer()
     @ObservationIgnored private let gemini = GeminiService()
     @ObservationIgnored private let glassesCamera: GlassesCamera
     @ObservationIgnored private var registrationTask: Task<Void, Never>?
     @ObservationIgnored private var devicesTask: Task<Void, Never>?
+    @ObservationIgnored private var waitingSoundTask: Task<Void, Never>?
 
     init(wearables: WearablesInterface, configurationError: String? = nil) {
         self.wearables = wearables
@@ -109,6 +111,7 @@ final class LumiViewModel {
     deinit {
         registrationTask?.cancel()
         devicesTask?.cancel()
+        waitingSoundTask?.cancel()
     }
 
     func connectGlasses() {
@@ -147,6 +150,7 @@ final class LumiViewModel {
     func describeScene() {
         guard !isBusy, isGlassesAvailable else { return }
         isCapturingScene = true
+        startWaitingSounds()
         let conversationID = activeConversationID
         let conversationHistory = conversation(for: conversationID)?.messages ?? []
         let userMemories = memos
@@ -168,6 +172,7 @@ final class LumiViewModel {
             } catch {
                 isCapturingScene = false
                 isSpeaking = false
+                stopWaitingSounds()
                 show(error)
             }
         }
@@ -228,9 +233,13 @@ final class LumiViewModel {
         Task {
             defer { isStartingVoice = false }
             do {
-                try await voiceRecorder.start()
+                try await voiceRecorder.prepareForRecording()
+                interactionSounds.play(.recordingStarted)
+                try await Task.sleep(for: .milliseconds(180))
+                try voiceRecorder.startPreparedRecording()
                 isRecording = true
             } catch {
+                interactionSounds.stop()
                 show(error)
             }
         }
@@ -241,6 +250,8 @@ final class LumiViewModel {
             let audioURL = try voiceRecorder.stop()
             isRecording = false
             isProcessing = true
+            interactionSounds.play(.questionSent)
+            startWaitingSounds()
             let conversationID = activeConversationID
             let conversationHistory = conversation(for: conversationID)?.messages ?? []
             let userMemories = memos
@@ -266,11 +277,13 @@ final class LumiViewModel {
                     isProcessing = false
                     isCapturingScene = false
                     isSpeaking = false
+                    stopWaitingSounds()
                     show(error)
                 }
             }
         } catch {
             isRecording = false
+            interactionSounds.stop()
             show(error)
         }
     }
@@ -337,6 +350,7 @@ final class LumiViewModel {
             conversationID: conversationID
         )
         let speech = try await gemini.synthesizeSpeech(result.answer)
+        stopWaitingSounds()
         isProcessing = false
         isCapturingScene = false
         try await playSpeech(speech)
@@ -364,6 +378,31 @@ final class LumiViewModel {
         isSpeaking = true
         defer { isSpeaking = false }
         try await speechOutput.speak(speech)
+    }
+
+    private func startWaitingSounds() {
+        waitingSoundTask?.cancel()
+
+        waitingSoundTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(360))
+
+                while !Task.isCancelled {
+                    self?.interactionSounds.play(.waitingPulse)
+                    try await Task.sleep(for: .milliseconds(1_450))
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func stopWaitingSounds() {
+        waitingSoundTask?.cancel()
+        waitingSoundTask = nil
+        interactionSounds.stop()
     }
 
     private func apply(
