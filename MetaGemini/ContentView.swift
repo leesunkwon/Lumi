@@ -196,9 +196,12 @@ struct ContentView: View {
                     .foregroundStyle(SeedColor.fgMuted)
                     .lineLimit(2)
 
-                Text(conversation.updatedAt.formatted(.relative(presentation: .named)))
-                    .font(.caption)
-                    .foregroundStyle(SeedColor.fgSubtle)
+                VStack(alignment: .leading, spacing: SeedSpacing.x0_5) {
+                    Text("시작 \(conversation.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                    Text("최근 \(conversation.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                }
+                .font(.caption2)
+                .foregroundStyle(SeedColor.fgSubtle)
             }
 
             Spacer(minLength: SeedSpacing.x2)
@@ -867,6 +870,8 @@ private struct ConversationDetailView: View {
             ScrollView {
                 if let conversation {
                     LazyVStack(spacing: SeedSpacing.x4) {
+                        sessionTimeline(conversation)
+
                         if conversation.messages.isEmpty {
                             emptyConversationState
                         } else {
@@ -944,7 +949,7 @@ private struct ConversationDetailView: View {
                         in: RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
                     )
 
-                Text(message.createdAt.formatted(date: .omitted, time: .shortened))
+                Text(message.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
                     .foregroundStyle(SeedColor.fgSubtle)
             }
@@ -957,6 +962,23 @@ private struct ConversationDetailView: View {
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(message.role == .user ? "내 메시지" : "Lumi 메시지")
+    }
+
+    private func sessionTimeline(_ conversation: ConversationSession) -> some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+            Text("세션 정보")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SeedColor.fgMuted)
+
+            Text("시작 \(conversation.createdAt.formatted(date: .abbreviated, time: .shortened)) · 최근 갱신 \(conversation.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption2)
+                .foregroundStyle(SeedColor.fgSubtle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SeedSpacing.x3)
+        .padding(.vertical, SeedSpacing.x2_5)
+        .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
     private func scrollToLatestMessage(with proxy: ScrollViewProxy) {

@@ -60,7 +60,7 @@ struct GeminiService {
 
     func answerVoiceQuestion(
         audioURL: URL,
-        conversationHistory: [ConversationMessage],
+        conversation: ConversationSession?,
         userMemories: [VoiceMemo]
     ) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
@@ -82,7 +82,7 @@ struct GeminiService {
             """,
             audioData: audioData,
             imageData: nil,
-            conversationHistory: conversationHistory,
+            conversation: conversation,
             userMemories: userMemories,
             userPrompt: "음성 질문을 전사하고 요청을 처리해 주세요."
         )
@@ -91,7 +91,7 @@ struct GeminiService {
     func describeScene(
         question: String = "지금 보는 장면을 설명해줘.",
         imageData: Data,
-        conversationHistory: [ConversationMessage],
+        conversation: ConversationSession?,
         userMemories: [VoiceMemo]
     ) async throws -> AssistantResult {
         let result = try await generate(
@@ -104,7 +104,7 @@ struct GeminiService {
             """,
             audioData: nil,
             imageData: imageData,
-            conversationHistory: conversationHistory,
+            conversation: conversation,
             userMemories: userMemories,
             userPrompt: "사용자 요청: \(question)"
         )
@@ -211,12 +211,12 @@ struct GeminiService {
         instruction: String,
         audioData: Data?,
         imageData: Data?,
-        conversationHistory: [ConversationMessage],
+        conversation: ConversationSession?,
         userMemories: [VoiceMemo],
         userPrompt: String
     ) async throws -> AssistantResult {
         let apiKey = try requireAPIKey()
-        let conversationContext = formattedConversationContext(conversationHistory)
+        let conversationContext = formattedConversationContext(conversation)
         let userMemoryContext = formattedUserMemoryContext(userMemories)
         let runtimeContext = currentRuntimeContext()
 
@@ -227,7 +227,9 @@ struct GeminiService {
         answer는 음성으로 들었을 때 자연스러운 한국어 구어체로 작성하세요. 짧고 완결된 문장을 사용하고,
         Markdown 기호, URL, 이모지, 표처럼 소리 내어 읽기 어려운 표현은 사용하지 마세요.
 
-        아래는 현재 대화 세션에서 앞서 나눈 내용입니다. 현재 질문에 도움이 될 때만 자연스럽게 참고하고,
+        아래는 현재 대화 세션의 시작·최근 갱신 시각과 앞서 나눈 메시지입니다. 현재 질문에 도움이 될 때만 자연스럽게 참고하고,
+        메시지 기록 시각은 “아까”, “어제”, “지난주” 같은 상대 시간의 문맥을 해석할 때 현재 시간과 비교해 사용하세요.
+        기록 시각을 실제 사건이나 일정의 시각으로 단정하지 말고, 메시지 본문에 적힌 날짜·시간을 우선하세요.
         이전 내용을 이미 알고 있다고 불필요하게 언급하지 마세요.
         <conversation_history>
         \(conversationContext)
@@ -344,19 +346,35 @@ struct GeminiService {
         return "\(formatter.string(from: date)) (\(TimeZone.current.identifier))"
     }
 
-    private func formattedConversationContext(_ history: [ConversationMessage]) -> String {
-        let recentMessages = history.suffix(10)
-        guard !recentMessages.isEmpty else { return "이전 대화 없음" }
+    private func formattedConversationContext(_ conversation: ConversationSession?) -> String {
+        guard let conversation else { return "이전 대화 없음" }
 
-        return recentMessages
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy년 M월 d일 EEEE a h시 mm분"
+
+        let sessionTimeline = [
+            "세션 시작: \(formatter.string(from: conversation.createdAt))",
+            "최근 갱신: \(formatter.string(from: conversation.updatedAt))"
+        ]
+
+        let recentMessages = conversation.messages.suffix(10)
+        guard !recentMessages.isEmpty else {
+            return (sessionTimeline + ["이전 메시지 없음"]).joined(separator: "\n")
+        }
+
+        let messages = recentMessages
             .map { message in
                 let speaker = message.role == .user ? "사용자" : "Lumi"
                 let text = message.text
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .prefix(500)
-                return "\(speaker): \(text)"
+                return "[기록 시각: \(formatter.string(from: message.createdAt))] \(speaker): \(text)"
             }
             .joined(separator: "\n")
+
+        return (sessionTimeline + [messages]).joined(separator: "\n")
     }
 
     private func formattedUserMemoryContext(_ memories: [VoiceMemo]) -> String {

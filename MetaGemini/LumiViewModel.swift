@@ -152,7 +152,7 @@ final class LumiViewModel {
         isCapturingScene = true
         startWaitingSounds()
         let conversationID = activeConversationID
-        let conversationHistory = conversation(for: conversationID)?.messages ?? []
+        let conversation = conversation(for: conversationID)
         let userMemories = memos
 
         Task {
@@ -161,7 +161,7 @@ final class LumiViewModel {
                 let result = try await gemini.describeScene(
                     question: "지금 보는 장면을 설명해줘.",
                     imageData: photoData,
-                    conversationHistory: conversationHistory,
+                    conversation: conversation,
                     userMemories: userMemories
                 )
                 try await deliver(
@@ -253,7 +253,7 @@ final class LumiViewModel {
             interactionSounds.play(.questionSent)
             startWaitingSounds()
             let conversationID = activeConversationID
-            let conversationHistory = conversation(for: conversationID)?.messages ?? []
+            let conversation = conversation(for: conversationID)
             let userMemories = memos
 
             Task {
@@ -264,13 +264,13 @@ final class LumiViewModel {
                 do {
                     let intentResult = try await gemini.answerVoiceQuestion(
                         audioURL: audioURL,
-                        conversationHistory: conversationHistory,
+                        conversation: conversation,
                         userMemories: userMemories
                     )
                     try await handleVoiceIntent(
                         intentResult,
                         conversationID: conversationID,
-                        conversationHistory: conversationHistory,
+                        conversation: conversation,
                         userMemories: userMemories
                     )
                 } catch {
@@ -291,7 +291,7 @@ final class LumiViewModel {
     private func handleVoiceIntent(
         _ result: AssistantResult,
         conversationID: UUID?,
-        conversationHistory: [ConversationMessage],
+        conversation: ConversationSession?,
         userMemories: [VoiceMemo]
     ) async throws {
         let userQuestion = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -328,7 +328,7 @@ final class LumiViewModel {
             let visualResult = try await gemini.describeScene(
                 question: fallbackUserMessage,
                 imageData: photoData,
-                conversationHistory: conversationHistory,
+                conversation: conversation,
                 userMemories: userMemories
             )
             try await deliver(
