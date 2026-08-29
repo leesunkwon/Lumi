@@ -98,11 +98,7 @@ struct GeminiService {
         let requestBody = TTSInteractionRequest(
             model: speechModel,
             input: prompt,
-            responseFormat: TTSResponseFormat(
-                type: "audio",
-                mimeType: "audio/wav",
-                delivery: "inline"
-            ),
+            responseFormat: TTSResponseFormat(type: "audio"),
             generationConfig: TTSGenerationConfig(
                 speechConfig: [TTSSpeechConfig(voice: speechVoice)]
             )
@@ -116,7 +112,6 @@ struct GeminiService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-        request.setValue("2026-05-20", forHTTPHeaderField: "Api-Revision")
         request.timeoutInterval = 60
         request.httpBody = try JSONEncoder().encode(requestBody)
 
@@ -133,7 +128,12 @@ struct GeminiService {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let responseBody = try decoder.decode(TTSInteractionResponse.self, from: data)
+        guard responseBody.status == "completed" else {
+            throw GeminiServiceError.invalidSpeechResponse
+        }
+
         let audioContent = responseBody.steps?
+            .filter { $0.type == "model_output" }
             .compactMap(\.content)
             .flatMap { $0 }
             .first { $0.type == "audio" && $0.data != nil }
@@ -148,7 +148,7 @@ struct GeminiService {
 
         return SynthesizedSpeech(
             audioData: audioData,
-            mimeType: audioContent.mimeType ?? "audio/wav",
+            mimeType: audioContent.mimeType ?? "audio/l16",
             sampleRate: audioContent.sampleRate ?? 24_000,
             channelCount: audioContent.channels ?? 1
         )
@@ -309,14 +309,6 @@ private struct TTSInteractionRequest: Encodable {
 
 private struct TTSResponseFormat: Encodable {
     let type: String
-    let mimeType: String
-    let delivery: String
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case mimeType = "mime_type"
-        case delivery
-    }
 }
 
 private struct TTSGenerationConfig: Encodable {
