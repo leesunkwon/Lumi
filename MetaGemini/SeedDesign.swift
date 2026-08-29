@@ -41,7 +41,6 @@ enum SeedColor {
     static let layerFloating = adaptive(light: 0xFFFFFF, dark: 0x1D2025)
     static let neutralSolid = adaptive(light: 0x1A1C20, dark: 0x2B2E35)
     static let neutralSolidPressed = adaptive(light: 0x2A3038, dark: 0x393D46)
-    static let deviceControl = adaptive(light: 0x525C78, dark: 0x68738F)
     static let neutralWeak = adaptive(light: 0xF3F4F5, dark: 0x2B2E35)
     static let neutralWeakPressed = adaptive(light: 0xEEEFF1, dark: 0x393D46)
     static let strokeSubtle = adaptive(light: 0xE6E7EA, dark: 0x2B2E35)

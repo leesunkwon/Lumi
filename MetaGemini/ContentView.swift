@@ -13,7 +13,6 @@ struct ContentView: View {
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
-    @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 44
 
     var body: some View {
         Group {
@@ -84,39 +83,34 @@ struct ContentView: View {
             }
             .scrollIndicators(.hidden)
             .background(SeedColor.layerBasement)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Lumi")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(SeedColor.layerDefault, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    settingsMenu
+                }
+            }
         }
     }
 
     private var deviceOverview: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center) {
-                Text("Lumi")
-                    .font(.system(size: homeTitleSize, weight: .bold, design: .default))
-                    .foregroundStyle(SeedColor.fgNeutral)
-                    .lineLimit(1)
-
-                Spacer()
-
-                settingsMenu
-            }
-            .padding(.top, SeedSpacing.x4)
-
             Image("RayBanMetaGlasses")
                 .resizable()
                 .renderingMode(.original)
                 .interpolation(.high)
                 .scaledToFit()
-                .frame(maxWidth: 360)
-                .scaleEffect(1.05)
-                .offset(y: -25)
-                .frame(height: 190)
+                .frame(maxWidth: 260)
+                .offset(y: -18)
+                .frame(height: 128)
                 .clipped()
-                .padding(.top, SeedSpacing.x12)
+                .padding(.top, SeedSpacing.x4)
                 .accessibilityHidden(true)
 
             connectionStatus
-                .padding(.top, SeedSpacing.x3)
+                .padding(.top, SeedSpacing.x1)
 
             if shouldShowActivityDetail {
                 Text(voiceActivityDetail)
@@ -128,7 +122,7 @@ struct ContentView: View {
             }
 
             if viewModel.isGlassesAvailable {
-                HStack {
+                HStack(spacing: SeedSpacing.x3) {
                     deviceActionButton(
                         symbol: "camera",
                         label: sceneButtonTitle,
@@ -138,26 +132,24 @@ struct ContentView: View {
                         action: performSceneAction
                     )
 
-                    Spacer()
-
                     deviceActionButton(
                         symbol: voiceActionSymbol,
                         label: voiceButtonTitle,
                         hint: voiceButtonAccessibilityHint,
                         isLoading: isVoiceActionLoading,
                         isDisabled: isVoiceActionDisabled,
+                        isPrimary: true,
                         isCritical: viewModel.isRecording,
                         action: performVoiceAction
                     )
                 }
-                .padding(.horizontal, SeedSpacing.x12)
-                .padding(.top, SeedSpacing.x12)
+                .padding(.top, SeedSpacing.x7)
             } else {
                 Button(action: performVoiceAction) {
                     HStack(spacing: SeedSpacing.x2) {
                         if viewModel.isRegistering {
                             ProgressView()
-                                .tint(.white)
+                                .tint(SeedColor.fgSubtle)
                         } else {
                             Image(systemName: "link")
                         }
@@ -170,20 +162,22 @@ struct ContentView: View {
                 .accessibilityHint("Meta AI 앱에서 Lumi와 안경의 연결을 시작합니다.")
             }
 
-            HStack(alignment: .top, spacing: SeedSpacing.x2) {
-                Image(systemName: "lock.fill")
-                    .font(.caption2)
-                    .frame(width: 14, height: 14)
+            if viewModel.isGlassesAvailable {
+                HStack(alignment: .top, spacing: SeedSpacing.x1_5) {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .frame(width: 12, height: 12)
 
-                Text("사진은 장면 설명에만 사용하며 기기에 저장하지 않아요.")
-                    .font(.footnote)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("장면 사진은 설명 후 저장하지 않아요.")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(SeedColor.fgSubtle)
+                .padding(.top, SeedSpacing.x4)
             }
-            .foregroundStyle(SeedColor.fgSubtle)
-            .padding(.top, SeedSpacing.x8)
-            .padding(.bottom, SeedSpacing.x10)
         }
         .frame(maxWidth: .infinity)
+        .padding(.bottom, SeedSpacing.x6)
     }
 
     @ViewBuilder
@@ -192,13 +186,21 @@ struct ContentView: View {
             if viewModel.isRegistering {
                 ProgressView()
                     .controlSize(.mini)
-                    .tint(deviceConnectionColor)
+                    .tint(SeedColor.brand)
+            } else {
+                Circle()
+                    .fill(viewModel.isGlassesAvailable ? SeedColor.positive : SeedColor.fgSubtle)
+                    .frame(width: 7, height: 7)
             }
 
+            Text("Ray-Ban Meta")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(SeedColor.fgNeutral)
+
             Text(deviceConnectionTitle)
-                .font(.title3.weight(.regular))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(SeedColor.fgMuted)
         }
-        .foregroundStyle(deviceConnectionColor)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Ray-Ban Meta")
         .accessibilityValue(deviceConnectionTitle)
@@ -210,29 +212,38 @@ struct ContentView: View {
         hint: String,
         isLoading: Bool,
         isDisabled: Bool,
+        isPrimary: Bool = false,
         isCritical: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(isCritical ? SeedColor.critical : SeedColor.deviceControl)
-
+            HStack(spacing: SeedSpacing.x2) {
                 if isLoading {
                     ProgressView()
-                        .tint(.white)
+                        .controlSize(.small)
+                        .tint(
+                            isDisabled
+                                ? SeedColor.fgSubtle
+                                : (isPrimary || isCritical ? .white : SeedColor.fgNeutral)
+                        )
                 } else {
                     Image(systemName: symbol)
-                        .font(.system(size: 27, weight: .medium))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 17, weight: .semibold))
                 }
+
+                Text(label)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
-            .frame(width: 76, height: 76)
-            .contentShape(Circle())
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(
+            SeedActionButtonStyle(
+                variant: isCritical ? .criticalSolid : (isPrimary ? .brandSolid : .neutralWeak),
+                size: .large
+            )
+        )
         .disabled(isDisabled)
-        .opacity(isDisabled && !isLoading ? 0.42 : 1)
         .accessibilityLabel(label)
         .accessibilityHint(hint)
         .accessibilityValue(deviceConnectionTitle)
@@ -520,8 +531,8 @@ struct ContentView: View {
                 Label("Lumi 소개 다시 보기", systemImage: "rectangle.on.rectangle")
             }
         } label: {
-            Image(systemName: "slider.vertical.3")
-                .font(.system(size: 23, weight: .semibold))
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(SeedColor.fgNeutral)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -551,12 +562,6 @@ struct ContentView: View {
         return "연결 필요"
     }
 
-    private var deviceConnectionColor: Color {
-        if viewModel.isRegistering { return SeedColor.brand }
-        if viewModel.isGlassesAvailable { return SeedColor.fgNeutral }
-        return SeedColor.fgSubtle
-    }
-
     private var shouldShowActivityDetail: Bool {
         !viewModel.isGlassesAvailable || viewModel.isBusy || viewModel.isRegistering
     }
@@ -574,17 +579,17 @@ struct ContentView: View {
 
     private var voiceButtonTitle: String {
         if viewModel.isRecording { return "질문 보내기" }
-        if viewModel.isStartingVoice { return "마이크 준비 중" }
-        if viewModel.isSpeaking { return "답변 재생 중" }
+        if viewModel.isStartingVoice { return "준비 중" }
+        if viewModel.isSpeaking { return "재생 중" }
         if viewModel.isProcessing { return "답변 준비 중" }
-        if viewModel.isRegistering { return "Meta AI 연결 중" }
-        if viewModel.isGlassesAvailable { return "음성으로 질문하기" }
+        if viewModel.isRegistering { return "연결 중" }
+        if viewModel.isGlassesAvailable { return "음성 질문" }
         return "안경 연결 시작"
     }
 
     private var voiceActionSymbol: String {
         if viewModel.isRecording { return "stop.fill" }
-        return "paperplane"
+        return "mic.fill"
     }
 
     private var isVoiceActionLoading: Bool {
@@ -606,10 +611,8 @@ struct ContentView: View {
     }
 
     private var sceneButtonTitle: String {
-        if viewModel.isCapturingScene { return "장면을 살펴보는 중" }
-        if viewModel.isSpeaking { return "답변을 들려드리는 중" }
-        if viewModel.isGlassesAvailable { return "지금 보는 장면 설명" }
-        return "안경 연결하고 시작"
+        if viewModel.isCapturingScene { return "보는 중" }
+        return "장면 보기"
     }
 
 }
