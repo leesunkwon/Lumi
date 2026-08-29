@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var isAnswerIslandExpanded = true
     @State private var conversationPath: [UUID] = []
     @State private var memoryPendingDeletion: VoiceMemo?
+    @State private var memoryEditor: UserMemoryEditor?
     @State private var isShowingClearAllMemoriesConfirmation = false
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
@@ -75,6 +76,20 @@ struct ContentView: View {
             Button("취소", role: .cancel) {}
         } message: {
             Text("저장된 사용자 메모리 전체가 삭제되며 복구할 수 없어요.")
+        }
+        .sheet(item: $memoryEditor) { editor in
+            UserMemoryEditorView(memory: editor.memory) { title, body, category in
+                if let memory = editor.memory {
+                    viewModel.updateUserMemory(
+                        id: memory.id,
+                        title: title,
+                        body: body,
+                        category: category
+                    )
+                } else {
+                    viewModel.addUserMemory(title: title, body: body, category: category)
+                }
+            }
         }
         .onChange(of: viewModel.lastAnswer) {
             hasSavedLatestAnswer = false
@@ -574,6 +589,10 @@ struct ContentView: View {
                     .padding(.vertical, SeedSpacing.x3)
                     .background(SeedColor.layerDefault)
 
+                memoryCategoryFilter
+                    .padding(.bottom, SeedSpacing.x3)
+                    .background(SeedColor.layerDefault)
+
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: SeedSpacing.x4) {
                         SeedCallout(
@@ -596,7 +615,14 @@ struct ContentView: View {
             .navigationTitle("사용자 메모리")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        memoryEditor = UserMemoryEditor()
+                    } label: {
+                        Label("메모리 추가", systemImage: "plus")
+                    }
+                    .accessibilityHint("직접 입력할 사용자 메모리를 추가합니다.")
+
                     settingsMenu
                 }
             }
@@ -626,24 +652,80 @@ struct ContentView: View {
         .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
     }
 
+    private var memoryCategoryFilter: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: SeedSpacing.x2) {
+                memoryCategoryFilterButton(nil)
+
+                ForEach(UserMemoryCategory.allCases) { category in
+                    memoryCategoryFilterButton(category)
+                }
+            }
+            .padding(.horizontal, SeedSpacing.globalGutter)
+        }
+        .scrollIndicators(.hidden)
+        .accessibilityLabel("사용자 메모리 카테고리 필터")
+    }
+
+    private func memoryCategoryFilterButton(_ category: UserMemoryCategory?) -> some View {
+        let isSelected = viewModel.selectedMemoryCategory == category
+        let title = category?.title ?? "전체"
+
+        return Button {
+            viewModel.selectedMemoryCategory = category
+        } label: {
+            HStack(spacing: SeedSpacing.x1) {
+                if let category {
+                    Image(systemName: category.symbol)
+                }
+                Text(title)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(isSelected ? SeedColor.onBrand : SeedColor.fgMuted)
+            .padding(.horizontal, SeedSpacing.x3)
+            .frame(minHeight: 36)
+            .background(
+                isSelected ? SeedColor.brand : SeedColor.layerFill,
+                in: Capsule()
+            )
+            .overlay {
+                if !isSelected {
+                    Capsule()
+                        .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title) 메모리 보기")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     @ViewBuilder
     private var memoryContent: some View {
         if viewModel.memos.isEmpty {
-            emptyMemoryState(
-                symbol: "bookmark",
-                title: "저장한 사용자 메모리가 없어요",
-                detail: "음성 질문에서 “이건 기억해줘”라고 말하거나 Lumi의 답변을 저장해보세요."
-            )
+            VStack(spacing: SeedSpacing.x4) {
+                emptyMemoryState(
+                    symbol: "bookmark",
+                    title: "저장한 사용자 메모리가 없어요",
+                    detail: "음성 질문에서 “이건 기억해줘”라고 말하거나 직접 입력해보세요."
+                )
+
+                Button("메모리 직접 추가") {
+                    memoryEditor = UserMemoryEditor()
+                }
+                .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
+            }
         } else if viewModel.filteredMemos.isEmpty {
             VStack(spacing: SeedSpacing.x4) {
                 emptyMemoryState(
                     symbol: "magnifyingglass",
-                    title: "검색 결과가 없어요",
-                    detail: "다른 검색어로 다시 찾아보세요."
+                    title: viewModel.memoSearchQuery.isEmpty ? "선택한 카테고리에 메모리가 없어요" : "검색 결과가 없어요",
+                    detail: viewModel.memoSearchQuery.isEmpty ? "다른 카테고리를 선택하거나 직접 추가해보세요." : "다른 검색어로 다시 찾아보세요."
                 )
 
-                Button("검색어 지우기") {
+                Button("필터 지우기") {
                     viewModel.memoSearchQuery = ""
+                    viewModel.selectedMemoryCategory = nil
                 }
                 .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
             }
@@ -666,7 +748,7 @@ struct ContentView: View {
                 Divider()
 
                 ForEach(Array(viewModel.filteredMemos.enumerated()), id: \.element.id) { index, memo in
-                    memoryRow(memo)
+                    memoryRow(memo, showsManagement: true)
 
                     if index < viewModel.filteredMemos.count - 1 {
                         Divider()
@@ -678,9 +760,9 @@ struct ContentView: View {
         }
     }
 
-    private func memoryRow(_ memo: VoiceMemo) -> some View {
+    private func memoryRow(_ memo: VoiceMemo, showsManagement: Bool = false) -> some View {
         HStack(alignment: .top, spacing: SeedSpacing.x3) {
-            Image(systemName: "bookmark.fill")
+            Image(systemName: memo.category.symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(SeedColor.brand)
                 .frame(width: 36, height: 36)
@@ -690,6 +772,10 @@ struct ContentView: View {
                 Text(memo.title)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(SeedColor.fgNeutral)
+
+                Text(memo.category.title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(SeedColor.fgMuted)
 
                 Text(memo.body)
                     .font(.subheadline)
@@ -703,22 +789,35 @@ struct ContentView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                memoryPendingDeletion = memo
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(SeedColor.fgSubtle)
-                    .frame(width: 36, height: 36)
-                    .contentShape(Circle())
+            if showsManagement {
+                Button {
+                    memoryEditor = UserMemoryEditor(memory: memo)
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(SeedColor.fgSubtle)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(memo.title) 편집")
+
+                Button {
+                    memoryPendingDeletion = memo
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(SeedColor.fgSubtle)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(memo.title) 삭제")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(memo.title) 삭제")
         }
         .padding(.horizontal, SeedSpacing.x3)
         .padding(.vertical, SeedSpacing.x3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
     private func emptyMemoryState(symbol: String, title: String, detail: String) -> some View {
@@ -853,6 +952,91 @@ struct ContentView: View {
         return "장면 보기"
     }
 
+}
+
+private struct UserMemoryEditor: Identifiable {
+    let id = UUID()
+    let memory: VoiceMemo?
+
+    init(memory: VoiceMemo? = nil) {
+        self.memory = memory
+    }
+}
+
+private struct UserMemoryEditorView: View {
+    let memory: VoiceMemo?
+    let onSave: (String, String, UserMemoryCategory) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var memoryBody: String
+    @State private var category: UserMemoryCategory
+
+    init(
+        memory: VoiceMemo?,
+        onSave: @escaping (String, String, UserMemoryCategory) -> Void
+    ) {
+        self.memory = memory
+        self.onSave = onSave
+        _title = State(initialValue: memory?.title ?? "")
+        _memoryBody = State(initialValue: memory?.body ?? "")
+        _category = State(initialValue: memory?.category ?? .general)
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !memoryBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var bodyView: some View {
+        NavigationStack {
+            Form {
+                Section("메모리 내용") {
+                    TextField("제목", text: $title)
+
+                    TextEditor(text: $memoryBody)
+                        .frame(minHeight: 128)
+                        .accessibilityLabel("메모리 내용")
+                }
+
+                Section("카테고리") {
+                    Picker("카테고리", selection: $category) {
+                        ForEach(UserMemoryCategory.allCases) { category in
+                            Label(category.title, systemImage: category.symbol)
+                                .tag(category)
+                        }
+                    }
+
+                    if category == .parking {
+                        Label("주차 기억은 최신 항목 하나만 보관돼요.", systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(memory == nil ? "메모리 추가" : "메모리 편집")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("저장") {
+                        onSave(title, memoryBody, category)
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        bodyView
+    }
 }
 
 private struct ConversationDetailView: View {

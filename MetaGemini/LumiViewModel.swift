@@ -22,6 +22,7 @@ final class LumiViewModel {
     var conversations: [ConversationSession] = []
     var activeConversationID: UUID?
     var memoSearchQuery = ""
+    var selectedMemoryCategory: UserMemoryCategory?
     var memos: [VoiceMemo] = []
     var isShowingError = false
     var errorMessage = ""
@@ -42,9 +43,12 @@ final class LumiViewModel {
 
     var filteredMemos: [VoiceMemo] {
         let query = memoSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return memos }
+        let categoryMemos = selectedMemoryCategory.map { category in
+            memos.filter { $0.category == category }
+        } ?? memos
+        guard !query.isEmpty else { return categoryMemos }
 
-        return memos.filter {
+        return categoryMemos.filter {
             $0.title.localizedCaseInsensitiveContains(query)
                 || $0.body.localizedCaseInsensitiveContains(query)
         }
@@ -185,6 +189,43 @@ final class LumiViewModel {
         saveUserMemory(VoiceMemo(title: title, body: lastAnswer))
     }
 
+    func addUserMemory(title: String, body: String, category: UserMemoryCategory) {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
+
+        saveUserMemory(
+            VoiceMemo(
+                title: normalizedTitle,
+                body: normalizedBody,
+                category: category
+            )
+        )
+    }
+
+    func updateUserMemory(
+        id: UUID,
+        title: String,
+        body: String,
+        category: UserMemoryCategory
+    ) {
+        guard memos.contains(where: { $0.id == id }) else { return }
+
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
+
+        memos.removeAll { $0.id == id }
+        saveUserMemory(
+            VoiceMemo(
+                id: id,
+                title: normalizedTitle,
+                body: normalizedBody,
+                category: category
+            )
+        )
+    }
+
     func deleteUserMemory(id: UUID) {
         guard memos.contains(where: { $0.id == id }) else { return }
         memos.removeAll { $0.id == id }
@@ -195,6 +236,7 @@ final class LumiViewModel {
         guard !memos.isEmpty else { return }
         memos.removeAll()
         memoSearchQuery = ""
+        selectedMemoryCategory = nil
         UserDefaults.standard.removeObject(forKey: Self.memosKey)
     }
 
@@ -426,7 +468,13 @@ final class LumiViewModel {
         if result.shouldSaveUserMemory,
            let userMemory = result.userMemory,
            hasExplicitUserMemorySaveRequest(in: userMessage) {
-            saveUserMemory(VoiceMemo(title: userMemory.title, body: userMemory.body))
+            saveUserMemory(
+                VoiceMemo(
+                    title: userMemory.title,
+                    body: userMemory.body,
+                    category: userMemory.category
+                )
+            )
         }
     }
 
@@ -442,12 +490,20 @@ final class LumiViewModel {
         let requestsRemembering = [
             "기억해", "기억해줘", "기억해둬", "기억해놓", "메모해", "메모리에저장", "메모리저장", "메모리에남겨"
         ].contains { compactText.contains($0) }
+        let directRememberRequest = [
+            "기억해줘", "기억해둬", "기억해놓", "메모해줘", "메모리에저장", "메모리저장", "메모리에남겨"
+        ].contains { compactText.contains($0) }
         let namesUserMemory = ["사용자메모리", "내메모리", "개인메모리"].contains {
             compactText.contains($0)
         }
+        let namesCategorizedMemory = [
+            "주차", "주차위치", "할일", "해야할일", "일정", "약속", "마감"
+        ].contains { compactText.contains($0) }
         let asksToStore = ["저장", "기억", "남겨"].contains { compactText.contains($0) }
 
-        return (refersToContent && requestsRemembering) || (namesUserMemory && asksToStore)
+        return (refersToContent && requestsRemembering)
+            || (namesUserMemory && asksToStore)
+            || (namesCategorizedMemory && directRememberRequest)
     }
 
     private func appendConversationTurn(
@@ -509,7 +565,12 @@ final class LumiViewModel {
     }
 
     private func saveUserMemory(_ userMemory: VoiceMemo) {
-        memos.insert(userMemory, at: 0)
+        memos.removeAll { $0.id == userMemory.id }
+        if userMemory.category == .parking {
+            memos.removeAll { $0.category == .parking }
+        }
+        memos.append(userMemory)
+        memos.sort { $0.createdAt > $1.createdAt }
         saveUserMemories()
     }
 

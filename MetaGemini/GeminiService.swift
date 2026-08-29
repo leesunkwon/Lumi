@@ -79,6 +79,11 @@ struct GeminiService {
             저장할 대상을 가리키며 명확하게 요청한 경우에만 shouldSaveUserMemory를 true로 설정하세요.
             단순히 기억, 메모, 저장이라는 단어를 언급하거나 기억에 관한 질문을 했다는 이유만으로 저장하지 마세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
+            userMemory.category는 반드시 general, task, schedule, parking 중 하나로 정하세요.
+            - task: 사용자가 해야 하는 실행 항목
+            - schedule: 약속, 일정, 마감 등 날짜·시간이 있는 계획
+            - parking: 현재 차량을 주차한 위치나 주차 관련 기억
+            - general: 그 외 개인 선호, 사실, 아이디어
             """,
             audioData: audioData,
             imageData: nil,
@@ -101,6 +106,7 @@ struct GeminiService {
             사진은 지금 이 요청을 처리하기 위해 새로 촬영된 것이므로 action은 반드시 answer로 설정하세요.
             사용자 메모리 저장은 사용자가 저장할 대상을 가리키며 명확하게 요청한 경우에만 shouldSaveUserMemory를 true로 설정하세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
+            userMemory.category는 general, task, schedule, parking 중 하나여야 합니다. 장면에서 파악한 차량 주차 위치는 parking으로 분류하세요.
             """,
             audioData: nil,
             imageData: imageData,
@@ -253,7 +259,7 @@ struct GeminiService {
           "transcript": "음성 입력의 한국어 전사. 이미지 전용이면 빈 문자열",
           "answer": "사용자에게 들려줄 한국어 답변",
           "shouldSaveUserMemory": true 또는 false,
-          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약" } 또는 null,
+          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약", "category": "general | task | schedule | parking" } 또는 null,
           "action": "answer | capture_scene | current_time",
           "timeDetail": "time | date | date_time 또는 null"
         }
