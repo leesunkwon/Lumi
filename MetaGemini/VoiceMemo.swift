@@ -19,7 +19,7 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
     }
 }
 
-struct MemoDraft: Codable {
+struct UserMemoryDraft: Codable {
     let title: String
     let body: String
 }

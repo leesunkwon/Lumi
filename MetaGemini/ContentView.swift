@@ -65,7 +65,7 @@ struct ContentView: View {
 
             memoriesScreen
                 .tabItem {
-                    Label("기억", systemImage: "bookmark")
+                    Label("메모리", systemImage: "bookmark")
                 }
                 .tag(LumiTab.memories)
         }
@@ -291,8 +291,8 @@ struct ContentView: View {
 
                     deviceActionButton(
                         symbol: "bookmark",
-                        label: "기억 보기",
-                        hint: "Lumi가 저장한 메모를 확인합니다.",
+                        label: "사용자 메모리 보기",
+                        hint: "Lumi가 명시적으로 저장한 사용자 메모리를 확인합니다.",
                         isLoading: false,
                         isDisabled: false,
                         action: { selectedTab = .memories }
@@ -436,7 +436,7 @@ struct ContentView: View {
                         Spacer()
 
                         Button {
-                            viewModel.saveLatestAnswerAsMemo()
+                            viewModel.saveLatestAnswerToUserMemory()
                             withAnimation(.easeOut(duration: 0.2)) {
                                 hasSavedLatestAnswer = true
                             }
@@ -449,7 +449,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(hasSavedLatestAnswer)
-                        .accessibilityLabel(hasSavedLatestAnswer ? "기억에 저장됨" : "답변을 기억에 저장")
+                        .accessibilityLabel(hasSavedLatestAnswer ? "사용자 메모리에 저장됨" : "답변을 사용자 메모리에 저장")
                     }
                 }
                 .padding(.top, SeedSpacing.x3)
@@ -468,7 +468,7 @@ struct ContentView: View {
     private var recentMemoriesSection: some View {
         VStack(alignment: .leading, spacing: SeedSpacing.x3) {
             HStack(alignment: .bottom) {
-                sectionHeader(title: "최근 메모", detail: "Lumi와 남긴 메모")
+                sectionHeader(title: "사용자 메모리", detail: "직접 저장한 중요한 내용")
                 Spacer()
                 Button("전체 보기") {
                     selectedTab = .memories
@@ -480,8 +480,8 @@ struct ContentView: View {
             if viewModel.memos.isEmpty {
                 SeedCallout(
                     symbol: "bookmark",
-                    title: "아직 기억한 내용이 없어요",
-                    description: "답변을 저장하거나 “기억해줘”라고 말하면 여기에 모아드려요.",
+                    title: "저장한 사용자 메모리가 없어요",
+                    description: "답변을 저장하거나 “이건 기억해줘”처럼 명확히 요청하면 여기에 모아드려요.",
                     tone: .neutral
                 )
             } else {
@@ -513,7 +513,7 @@ struct ContentView: View {
                         SeedCallout(
                             symbol: "iphone.gen3",
                             title: "이 iPhone에만 저장돼요",
-                            description: "Lumi의 메모는 기본적으로 기기 안에 보관돼요.",
+                            description: "사용자 메모리는 기본적으로 이 iPhone 안에 보관돼요.",
                             tone: .positive
                         )
 
@@ -527,7 +527,7 @@ struct ContentView: View {
                 .scrollIndicators(.hidden)
             }
             .background(SeedColor.layerBasement)
-            .navigationTitle("기억")
+            .navigationTitle("사용자 메모리")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -542,7 +542,7 @@ struct ContentView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(SeedColor.fgSubtle)
 
-            TextField("메모 검색", text: $viewModel.memoSearchQuery)
+            TextField("사용자 메모리 검색", text: $viewModel.memoSearchQuery)
                 .textInputAutocapitalization(.never)
 
             if !viewModel.memoSearchQuery.isEmpty {
@@ -565,8 +565,8 @@ struct ContentView: View {
         if viewModel.memos.isEmpty {
             emptyMemoryState(
                 symbol: "bookmark",
-                title: "아직 기억한 메모가 없어요",
-                detail: "음성 질문에서 “기억해줘”라고 말하거나 Lumi의 답변을 저장해보세요."
+                title: "저장한 사용자 메모리가 없어요",
+                detail: "음성 질문에서 “이건 기억해줘”라고 말하거나 Lumi의 답변을 저장해보세요."
             )
         } else if viewModel.filteredMemos.isEmpty {
             VStack(spacing: SeedSpacing.x4) {
@@ -584,7 +584,7 @@ struct ContentView: View {
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("메모 (viewModel.filteredMemos.count)개")
+                    Text("사용자 메모리 \(viewModel.filteredMemos.count)개")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(SeedColor.fgMuted)
                     Spacer()

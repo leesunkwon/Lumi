@@ -28,7 +28,8 @@ enum GeminiServiceError: LocalizedError {
 struct AssistantResult {
     let transcript: String?
     let answer: String
-    let memo: MemoDraft?
+    let userMemory: UserMemoryDraft?
+    let shouldSaveUserMemory: Bool
     let action: AssistantAction
     let timeDetail: TimeDetail?
 }
@@ -72,8 +73,11 @@ struct GeminiService {
             - answer: 사진이나 현재 시간이 필요하지 않은 모든 요청입니다. transcript에 전체 질문을 넣고 자연스러운 답을 작성하세요.
 
             단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
-            일정, 메모, 아이디어 정리 요청에는 간결하고 실용적으로 답하세요.
-            사용자가 '기억해', '메모해', '저장해' 같은 의도를 표현한 경우에만 memo를 채우세요.
+            일정, 사용자 메모리, 아이디어 정리 요청에는 간결하고 실용적으로 답하세요.
+            사용자 메모리 저장은 사용자가 "이건 기억해줘", "방금 말한 내용을 내 메모리에 저장해줘"처럼
+            저장할 대상을 가리키며 명확하게 요청한 경우에만 shouldSaveUserMemory를 true로 설정하세요.
+            단순히 기억, 메모, 저장이라는 단어를 언급하거나 기억에 관한 질문을 했다는 이유만으로 저장하지 마세요.
+            true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
             """,
             audioData: audioData,
             imageData: nil,
@@ -92,7 +96,8 @@ struct GeminiService {
             사용자가 안경 카메라로 본 장면에 관해 요청했습니다. 사용자의 질문에 맞춰 한국어로 2~3문장 안에서 답하세요. 보이는 물체, 읽을 수 있는 핵심 텍스트,
             사용자가 다음에 취할 수 있는 실용적인 행동을 우선해서 말하세요. 확실하지 않은 정보는 추측이라고 밝혀야 합니다.
             사진은 지금 이 요청을 처리하기 위해 새로 촬영된 것이므로 action은 반드시 answer로 설정하세요.
-            사용자가 '기억해', '메모해', '저장해' 같은 의도를 표현한 경우에만 memo를 채우세요.
+            사용자 메모리 저장은 사용자가 저장할 대상을 가리키며 명확하게 요청한 경우에만 shouldSaveUserMemory를 true로 설정하세요.
+            true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
             """,
             audioData: nil,
             imageData: imageData,
@@ -103,7 +108,8 @@ struct GeminiService {
         return AssistantResult(
             transcript: result.transcript,
             answer: result.answer.isEmpty ? "사진을 분석하지 못했어요. 다시 한 번 시도해 주세요." : result.answer,
-            memo: result.memo,
+            userMemory: result.userMemory,
+            shouldSaveUserMemory: result.shouldSaveUserMemory,
             action: .answer,
             timeDetail: nil
         )
@@ -230,10 +236,14 @@ struct GeminiService {
         {
           "transcript": "음성 입력의 한국어 전사. 이미지 전용이면 빈 문자열",
           "answer": "사용자에게 들려줄 한국어 답변",
-          "memo": { "title": "짧은 제목", "body": "저장할 내용" } 또는 null,
+          "shouldSaveUserMemory": true 또는 false,
+          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약" } 또는 null,
           "action": "answer | capture_scene | current_time",
           "timeDetail": "time | date | date_time 또는 null"
         }
+
+        shouldSaveUserMemory가 false이면 userMemory는 반드시 null입니다. true이면 사용자가 저장하려는 내용만 남기고,
+        추측하거나 빠진 정보를 보완하지 마세요. 저장할 핵심을 판단할 수 없으면 false로 두고 짧은 확인 질문을 하세요.
         """
 
         var parts = [GeminiPart(text: userPrompt)]
@@ -295,7 +305,8 @@ struct GeminiService {
             return AssistantResult(
                 transcript: payload.transcript?.nilIfEmpty,
                 answer: action == .answer && answer.isEmpty ? "죄송해요. 다시 한 번 말씀해 주세요." : answer,
-                memo: payload.memo,
+                userMemory: payload.userMemory,
+                shouldSaveUserMemory: payload.shouldSaveUserMemory ?? false,
                 action: action,
                 timeDetail: payload.timeDetail
             )
@@ -304,7 +315,8 @@ struct GeminiService {
         return AssistantResult(
             transcript: nil,
             answer: cleanedText,
-            memo: nil,
+            userMemory: nil,
+            shouldSaveUserMemory: false,
             action: .answer,
             timeDetail: nil
         )
@@ -461,7 +473,8 @@ private struct GeminiErrorResponse: Decodable {
 private struct AssistantPayload: Decodable {
     let transcript: String?
     let answer: String
-    let memo: MemoDraft?
+    let shouldSaveUserMemory: Bool?
+    let userMemory: UserMemoryDraft?
     let action: AssistantAction?
     let timeDetail: TimeDetail?
 }

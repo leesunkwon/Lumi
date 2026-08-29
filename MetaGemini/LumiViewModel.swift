@@ -171,11 +171,11 @@ final class LumiViewModel {
         }
     }
 
-    func saveLatestAnswerAsMemo() {
+    func saveLatestAnswerToUserMemory() {
         guard let lastAnswer else { return }
 
-        let body = lastTranscript.map { "질문: \($0)\n\n답변: \(lastAnswer)" } ?? lastAnswer
-        saveMemo(VoiceMemo(title: "Lumi 답변", body: body))
+        let title = lastTranscript.map(conversationTitle(for:)) ?? "Lumi 답변"
+        saveUserMemory(VoiceMemo(title: title, body: lastAnswer))
     }
 
     @discardableResult
@@ -277,7 +277,8 @@ final class LumiViewModel {
             let localTimeResult = AssistantResult(
                 transcript: result.transcript,
                 answer: currentTimeAnswer(for: result.timeDetail),
-                memo: result.memo,
+                userMemory: result.userMemory,
+                shouldSaveUserMemory: result.shouldSaveUserMemory,
                 action: .answer,
                 timeDetail: nil
             )
@@ -363,9 +364,31 @@ final class LumiViewModel {
             lastAnswer = result.answer
         }
 
-        if let memo = result.memo {
-            saveMemo(VoiceMemo(title: memo.title, body: memo.body))
+        if result.shouldSaveUserMemory,
+           let userMemory = result.userMemory,
+           hasExplicitUserMemorySaveRequest(in: userMessage) {
+            saveUserMemory(VoiceMemo(title: userMemory.title, body: userMemory.body))
         }
+    }
+
+    private func hasExplicitUserMemorySaveRequest(in text: String) -> Bool {
+        let compactText = String(
+            text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains)
+        )
+
+        let refersToContent = [
+            "이거", "이것", "이걸", "이건", "이내용", "그거", "그것", "그걸", "그건", "그내용",
+            "방금말한", "지금말한", "앞에서말한", "앞의내용"
+        ].contains { compactText.contains($0) }
+        let requestsRemembering = [
+            "기억해", "기억해줘", "기억해둬", "기억해놓", "메모해", "메모리에저장", "메모리저장", "메모리에남겨"
+        ].contains { compactText.contains($0) }
+        let namesUserMemory = ["사용자메모리", "내메모리", "개인메모리"].contains {
+            compactText.contains($0)
+        }
+        let asksToStore = ["저장", "기억", "남겨"].contains { compactText.contains($0) }
+
+        return (refersToContent && requestsRemembering) || (namesUserMemory && asksToStore)
     }
 
     private func appendConversationTurn(
@@ -426,8 +449,8 @@ final class LumiViewModel {
         }
     }
 
-    private func saveMemo(_ memo: VoiceMemo) {
-        memos.insert(memo, at: 0)
+    private func saveUserMemory(_ userMemory: VoiceMemo) {
+        memos.insert(userMemory, at: 0)
         guard let data = try? JSONEncoder().encode(memos) else { return }
         UserDefaults.standard.set(data, forKey: Self.memosKey)
     }

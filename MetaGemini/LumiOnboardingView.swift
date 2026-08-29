@@ -36,9 +36,9 @@ struct LumiOnboardingView: View {
         .init(
             symbol: "bookmark.fill",
             accent: SeedColor.positive,
-            eyebrow: "나만의 기억",
+            eyebrow: "사용자 메모리",
             title: "중요한 순간은 로컬에 남겨요",
-            detail: "“기억해줘”라고 말하면 메모로 정리해 iPhone 안에 저장하고 나중에 다시 찾을 수 있어요."
+            detail: "“이건 기억해줘”처럼 명확히 요청하면 핵심만 정리해 iPhone 안에 저장하고 나중에 다시 찾을 수 있어요."
         ),
         .init(
             symbol: "eyeglasses",
@@ -190,7 +190,7 @@ struct LumiOnboardingView: View {
             HStack(spacing: SeedSpacing.x2) {
                 previewChip("말하기", symbol: "waveform", color: SeedColor.informative)
                 previewChip("장면 보기", symbol: "eye.fill", color: SeedColor.warning)
-                previewChip("기억하기", symbol: "bookmark.fill", color: SeedColor.positive)
+                previewChip("메모리", symbol: "bookmark.fill", color: SeedColor.positive)
             }
         case 1:
             HStack(spacing: SeedSpacing.x3) {
@@ -226,7 +226,7 @@ struct LumiOnboardingView: View {
                 VStack(alignment: .leading, spacing: SeedSpacing.x1) {
                     Text("필요한 순간만 한 장")
                         .font(.subheadline.weight(.bold))
-                    Text("사진은 메모에 저장하지 않아요")
+                    Text("사진은 사용자 메모리에 저장하지 않아요")
                         .font(.caption)
                         .foregroundStyle(SeedColor.fgSubtle)
                 }
