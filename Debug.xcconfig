@@ -2,5 +2,6 @@
 META_APP_ID = 0
 META_CLIENT_TOKEN =
 GEMINI_API_KEY =
+KMA_WEATHER_API_KEY =
 
 #include? "Secrets.xcconfig"

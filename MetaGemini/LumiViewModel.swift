@@ -70,6 +70,7 @@ final class LumiViewModel {
     @ObservationIgnored private let speechOutput = SpeechOutput()
     @ObservationIgnored private let interactionSounds = InteractionSoundPlayer()
     @ObservationIgnored private let gemini = GeminiService()
+    @ObservationIgnored private let weather = WeatherService()
     @ObservationIgnored private let glassesCamera: GlassesCamera
     @ObservationIgnored private var registrationTask: Task<Void, Never>?
     @ObservationIgnored private var devicesTask: Task<Void, Never>?
@@ -371,7 +372,8 @@ final class LumiViewModel {
                 userMemory: result.userMemory,
                 shouldSaveUserMemory: result.shouldSaveUserMemory,
                 action: .answer,
-                timeDetail: nil
+                timeDetail: nil,
+                weatherDetail: nil
             )
             try await deliver(
                 localTimeResult,
@@ -395,6 +397,25 @@ final class LumiViewModel {
                 fallbackUserMessage: fallbackUserMessage,
                 conversationID: conversationID,
                 scenePhotoData: photoData
+            )
+
+        case .weather:
+            let answer = try await weather.weatherAnswer(
+                for: result.weatherDetail ?? WeatherRequest()
+            )
+            let weatherResult = AssistantResult(
+                transcript: result.transcript,
+                answer: answer,
+                userMemory: result.userMemory,
+                shouldSaveUserMemory: result.shouldSaveUserMemory,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                weatherResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
             )
         }
     }

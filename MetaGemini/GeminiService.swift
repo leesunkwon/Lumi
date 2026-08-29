@@ -32,12 +32,14 @@ struct AssistantResult {
     let shouldSaveUserMemory: Bool
     let action: AssistantAction
     let timeDetail: TimeDetail?
+    let weatherDetail: WeatherRequest?
 }
 
 enum AssistantAction: String, Decodable {
     case answer
     case captureScene = "capture_scene"
     case currentTime = "current_time"
+    case weather
 }
 
 enum TimeDetail: String, Decodable {
@@ -71,6 +73,7 @@ struct GeminiService {
             action은 반드시 다음 중 하나입니다.
             - capture_scene: 사용자가 지금 보고 있는 물건, 메뉴, 문서, 사람, 주변 장면처럼 새 사진을 찍어야만 답할 수 있는 내용을 분석해 달라고 요청한 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요.
             - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
+            - weather: 사용자가 현재 위치의 날씨, 오늘·내일 날씨, 특정 시간대의 비·눈·기온을 물어본 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. weatherDetail에는 대화 문맥을 반영해 day와 period를 채우세요. 예를 들어 “오늘 날씨 어때”는 today/day, “내일은?”은 tomorrow/day, “오늘 오후에 비 와?”는 today/afternoon, “지금 비 와?”는 today/current입니다. 다른 지역의 날씨는 이 동작을 사용하지 마세요.
             - answer: 사진이나 현재 시간이 필요하지 않은 모든 요청입니다. transcript에 전체 질문을 넣고 자연스러운 답을 작성하세요.
 
             단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
@@ -120,7 +123,8 @@ struct GeminiService {
             userMemory: result.userMemory,
             shouldSaveUserMemory: result.shouldSaveUserMemory,
             action: .answer,
-            timeDetail: nil
+            timeDetail: nil,
+            weatherDetail: nil
         )
     }
 
@@ -259,8 +263,9 @@ struct GeminiService {
           "answer": "사용자에게 들려줄 한국어 답변",
           "shouldSaveUserMemory": true 또는 false,
           "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약", "category": "general | schedule | parking" } 또는 null,
-          "action": "answer | capture_scene | current_time",
-          "timeDetail": "time | date | date_time 또는 null"
+          "action": "answer | capture_scene | current_time | weather",
+          "timeDetail": "time | date | date_time 또는 null",
+          "weatherDetail": { "day": "today | tomorrow", "period": "current | morning | afternoon | evening | night | day" } 또는 null
         }
 
         shouldSaveUserMemory가 false이면 userMemory는 반드시 null입니다. true이면 사용자가 저장하려는 내용만 남기고,
@@ -329,7 +334,8 @@ struct GeminiService {
                 userMemory: payload.userMemory,
                 shouldSaveUserMemory: payload.shouldSaveUserMemory ?? false,
                 action: action,
-                timeDetail: payload.timeDetail
+                timeDetail: payload.timeDetail,
+                weatherDetail: payload.weatherDetail
             )
         }
 
@@ -339,7 +345,8 @@ struct GeminiService {
             userMemory: nil,
             shouldSaveUserMemory: false,
             action: .answer,
-            timeDetail: nil
+            timeDetail: nil,
+            weatherDetail: nil
         )
     }
 
@@ -532,6 +539,7 @@ private struct AssistantPayload: Decodable {
     let userMemory: UserMemoryDraft?
     let action: AssistantAction?
     let timeDetail: TimeDetail?
+    let weatherDetail: WeatherRequest?
 }
 
 private extension String {
