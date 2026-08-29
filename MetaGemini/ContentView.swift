@@ -79,7 +79,9 @@ struct ContentView: View {
                 LazyVStack(spacing: SeedSpacing.x6) {
                     deviceOverview
 
-                    if let answer = viewModel.lastAnswer {
+                    if let activity = lumiActivity {
+                        activityIsland(activity)
+                    } else if let answer = viewModel.lastAnswer {
                         answerIsland(answer)
                     }
 
@@ -215,14 +217,6 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .accessibilityHidden(true)
 
-            if shouldShowActivityDetail {
-                Text(voiceActivityDetail)
-                    .font(.footnote)
-                    .foregroundStyle(viewModel.isRecording ? SeedColor.critical : SeedColor.fgSubtle)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, SeedSpacing.x1)
-            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -463,6 +457,40 @@ struct ContentView: View {
                 .stroke(.white.opacity(0.1), lineWidth: 0.5)
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isAnswerIslandExpanded)
+    }
+
+    private func activityIsland(_ activity: LumiActivity) -> some View {
+        HStack(spacing: SeedSpacing.x3) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(SeedColor.fgInverted.opacity(0.82))
+                .frame(width: 20, height: 20)
+
+            LumiActivityIndicator(activity: activity)
+
+            Spacer(minLength: SeedSpacing.x2)
+
+            HStack(spacing: SeedSpacing.x1) {
+                Circle()
+                    .fill(SeedColor.fgInverted)
+                    .frame(width: 5, height: 5)
+                Circle()
+                    .fill(SeedColor.fgInverted.opacity(0.42))
+                    .frame(width: 5, height: 5)
+                Circle()
+                    .fill(SeedColor.fgInverted.opacity(0.2))
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .padding(.horizontal, SeedSpacing.x5)
+        .frame(maxWidth: .infinity, minHeight: 64)
+        .background(SeedColor.neutralSolid, in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(.white.opacity(0.1), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(activity.accessibilityLabel)
     }
 
     private var recentMemoriesSection: some View {
@@ -722,19 +750,14 @@ struct ContentView: View {
         return "연결 필요"
     }
 
-    private var shouldShowActivityDetail: Bool {
-        !viewModel.isGlassesAvailable || viewModel.isBusy || viewModel.isRegistering
-    }
-
-    private var voiceActivityDetail: String {
-        if viewModel.isRecording { return "듣고 있어요. 질문이 끝나면 버튼을 한 번 더 눌러주세요." }
-        if viewModel.isStartingVoice { return "안경 마이크를 준비하고 있어요." }
-        if viewModel.isSpeaking { return "안경 스피커로 답변을 들려드리고 있어요." }
-        if viewModel.isProcessing { return "답변을 준비하고 있어요." }
-        if viewModel.isCapturingScene { return "안경 카메라로 장면을 살펴보고 있어요." }
-        if viewModel.isRegistering { return "Meta AI에서 안경 연결을 마무리해주세요." }
-        if viewModel.isGlassesAvailable { return "버튼을 누르고 안경에 대고 말해보세요." }
-        return "먼저 Ray-Ban Meta를 Lumi에 연결해주세요."
+    private var lumiActivity: LumiActivity? {
+        if viewModel.isRecording { return .listening }
+        if viewModel.isStartingVoice { return .preparingVoice }
+        if viewModel.isCapturingScene { return .capturingScene }
+        if viewModel.isProcessing { return .processing }
+        if viewModel.isSpeaking { return .speaking }
+        if viewModel.isRegistering { return .connecting }
+        return nil
     }
 
     private var voiceButtonTitle: String {
@@ -888,6 +911,138 @@ private struct ConversationDetailView: View {
         DispatchQueue.main.async {
             proxy.scrollTo(bottomAnchor, anchor: .bottom)
         }
+    }
+}
+
+private enum LumiActivity: Hashable {
+    case preparingVoice
+    case listening
+    case processing
+    case capturingScene
+    case speaking
+    case connecting
+
+    var accessibilityLabel: String {
+        switch self {
+        case .preparingVoice:
+            return "Lumi가 안경 마이크를 준비하고 있습니다"
+        case .listening:
+            return "Lumi가 듣고 있습니다"
+        case .processing:
+            return "Lumi가 답변을 준비하고 있습니다"
+        case .capturingScene:
+            return "Lumi가 안경 카메라로 장면을 분석하고 있습니다"
+        case .speaking:
+            return "Lumi가 안경 스피커로 답변을 들려주고 있습니다"
+        case .connecting:
+            return "Lumi가 안경 연결을 준비하고 있습니다"
+        }
+    }
+}
+
+private struct LumiActivityIndicator: View {
+    let activity: LumiActivity
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAnimating = false
+
+    var body: some View {
+        Group {
+            switch activity {
+            case .listening, .speaking:
+                waveform
+            case .processing:
+                thinkingDots
+            case .capturingScene:
+                scanningViewfinder
+            case .preparingVoice:
+                pulsingSymbol("mic.fill")
+            case .connecting:
+                pulsingSymbol("link")
+            }
+        }
+        .frame(width: 72, height: 32, alignment: .leading)
+        .onAppear {
+            startAnimation()
+        }
+        .onChange(of: activity) {
+            isAnimating = false
+            startAnimation()
+        }
+    }
+
+    private var waveform: some View {
+        HStack(spacing: SeedSpacing.x1) {
+            ForEach(Array([12, 22, 30, 18, 10].enumerated()), id: \.offset) { index, height in
+                Capsule()
+                    .fill(SeedColor.fgInverted)
+                    .frame(width: 4, height: CGFloat(height))
+                    .scaleEffect(
+                        y: isAnimating ? (index.isMultiple(of: 2) ? 0.52 : 1) : 0.4,
+                        anchor: .center
+                    )
+                    .opacity(isAnimating ? 1 : 0.5)
+                    .animation(
+                        repeatingAnimation(delay: Double(index) * 0.09),
+                        value: isAnimating
+                    )
+            }
+        }
+    }
+
+    private var thinkingDots: some View {
+        HStack(spacing: SeedSpacing.x2) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(SeedColor.fgInverted)
+                    .frame(width: 7, height: 7)
+                    .offset(y: isAnimating ? -5 : 3)
+                    .opacity(isAnimating ? 1 : 0.35)
+                    .animation(
+                        repeatingAnimation(delay: Double(index) * 0.12),
+                        value: isAnimating
+                    )
+            }
+        }
+    }
+
+    private var scanningViewfinder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(SeedColor.fgInverted.opacity(0.68), lineWidth: 1.5)
+                .frame(width: 28, height: 28)
+                .scaleEffect(isAnimating ? 1 : 0.74)
+                .opacity(isAnimating ? 0.95 : 0.4)
+                .animation(repeatingAnimation(), value: isAnimating)
+
+            Circle()
+                .fill(SeedColor.fgInverted)
+                .frame(width: 7, height: 7)
+                .scaleEffect(isAnimating ? 1.2 : 0.5)
+                .animation(repeatingAnimation(delay: 0.16), value: isAnimating)
+        }
+    }
+
+    private func pulsingSymbol(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(SeedColor.fgInverted)
+            .scaleEffect(isAnimating ? 1 : 0.72)
+            .opacity(isAnimating ? 1 : 0.48)
+            .animation(repeatingAnimation(), value: isAnimating)
+    }
+
+    private func startAnimation() {
+        guard !reduceMotion else { return }
+        DispatchQueue.main.async {
+            isAnimating = true
+        }
+    }
+
+    private func repeatingAnimation(delay: Double = 0) -> Animation {
+        .easeInOut(duration: 0.72)
+            .repeatForever(autoreverses: true)
+            .delay(delay)
     }
 }
 
