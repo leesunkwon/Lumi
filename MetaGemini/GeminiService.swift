@@ -8,6 +8,7 @@ import Foundation
 enum GeminiServiceError: LocalizedError {
     case missingAPIKey
     case invalidResponse
+    case invalidSpeechResponse
     case serviceError(String)
 
     var errorDescription: String? {
@@ -16,6 +17,8 @@ enum GeminiServiceError: LocalizedError {
             return "Gemini API 키가 없습니다. Secrets.xcconfig에 GEMINI_API_KEY를 설정해주세요."
         case .invalidResponse:
             return "Gemini에서 이해할 수 없는 응답을 받았습니다."
+        case .invalidSpeechResponse:
+            return "Gemini 음성 응답을 재생 가능한 형식으로 받지 못했습니다."
         case .serviceError(let message):
             return "Gemini 요청에 실패했습니다: \(message)"
         }
@@ -28,8 +31,17 @@ struct AssistantResult {
     let memo: MemoDraft?
 }
 
+struct SynthesizedSpeech {
+    let audioData: Data
+    let mimeType: String
+    let sampleRate: Int
+    let channelCount: Int
+}
+
 struct GeminiService {
-    private let model = "gemini-3.6-flash"
+    private let model = "gemini-3.1-flash-lite"
+    private let speechModel = "gemini-3.1-flash-tts-preview"
+    private let speechVoice = "Sulafat"
 
     func answerVoiceQuestion(audioURL: URL) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
@@ -54,21 +66,107 @@ struct GeminiService {
         )
     }
 
+    func synthesizeSpeech(_ text: String) async throws -> SynthesizedSpeech {
+        let apiKey = try requireAPIKey()
+        let transcript = text
+            .replacingOccurrences(of: "</transcript>", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !transcript.isEmpty else {
+            throw GeminiServiceError.invalidSpeechResponse
+        }
+
+        let prompt = """
+        # AUDIO PROFILE
+        Lumi is a warm, composed, and trustworthy personal AI assistant.
+
+        # SCENE
+        Lumi is speaking privately to one person through smart-glasses speakers.
+
+        # DIRECTOR'S NOTES
+        Speak in natural standard Korean. Sound warm, friendly, and conversational rather than like an announcer.
+        Use a relaxed, slightly brisk pace with short natural pauses. Keep the volume and emotion even.
+        Pronounce numbers and English words clearly. Do not read these directions or add any words.
+
+        # TRANSCRIPT
+        Read only the text inside the transcript tags, verbatim.
+        <transcript>
+        \(transcript)
+        </transcript>
+        """
+
+        let requestBody = TTSInteractionRequest(
+            model: speechModel,
+            input: prompt,
+            responseFormat: TTSResponseFormat(
+                type: "audio",
+                mimeType: "audio/wav",
+                delivery: "inline"
+            ),
+            generationConfig: TTSGenerationConfig(
+                speechConfig: [TTSSpeechConfig(voice: speechVoice)]
+            )
+        )
+
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/interactions") else {
+            throw GeminiServiceError.invalidSpeechResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.setValue("2026-05-20", forHTTPHeaderField: "Api-Revision")
+        request.timeoutInterval = 60
+        request.httpBody = try JSONEncoder().encode(requestBody)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GeminiServiceError.invalidSpeechResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorResponse = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data)
+            throw GeminiServiceError.serviceError(errorResponse?.error.message ?? "HTTP \(httpResponse.statusCode)")
+        }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let responseBody = try decoder.decode(TTSInteractionResponse.self, from: data)
+        let audioContent = responseBody.steps?
+            .compactMap(\.content)
+            .flatMap { $0 }
+            .first { $0.type == "audio" && $0.data != nil }
+
+        guard let audioContent,
+              let encodedAudio = audioContent.data,
+              let audioData = Data(base64Encoded: encodedAudio),
+              !audioData.isEmpty
+        else {
+            throw GeminiServiceError.invalidSpeechResponse
+        }
+
+        return SynthesizedSpeech(
+            audioData: audioData,
+            mimeType: audioContent.mimeType ?? "audio/wav",
+            sampleRate: audioContent.sampleRate ?? 24_000,
+            channelCount: audioContent.channels ?? 1
+        )
+    }
+
     private func generate(
         instruction: String,
         audioData: Data?,
         imageData: Data?
     ) async throws -> AssistantResult {
-        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "GeminiAPIKey") as? String,
-              !apiKey.isEmpty,
-              !apiKey.contains("$")
-        else {
-            throw GeminiServiceError.missingAPIKey
-        }
+        let apiKey = try requireAPIKey()
 
         let systemPrompt = """
         당신은 Lumi, Ray-Ban Meta와 함께 동작하는 개인 AI 비서입니다.
         \(instruction)
+
+        answer는 음성으로 들었을 때 자연스러운 한국어 구어체로 작성하세요. 짧고 완결된 문장을 사용하고,
+        Markdown 기호, URL, 이모지, 표처럼 소리 내어 읽기 어려운 표현은 사용하지 마세요.
 
         반드시 아래 JSON만 반환하세요. Markdown 코드 블록을 쓰지 마세요.
         {
@@ -141,6 +239,17 @@ struct GeminiService {
 
         return AssistantResult(transcript: nil, answer: cleanedText, memo: nil)
     }
+
+    private func requireAPIKey() throws -> String {
+        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "GeminiAPIKey") as? String,
+              !apiKey.isEmpty,
+              !apiKey.contains("$")
+        else {
+            throw GeminiServiceError.missingAPIKey
+        }
+
+        return apiKey
+    }
 }
 
 private struct GeminiRequest: Encodable {
@@ -184,6 +293,44 @@ private struct GenerationConfig: Encodable {
     let responseMimeType: String
 }
 
+private struct TTSInteractionRequest: Encodable {
+    let model: String
+    let input: String
+    let responseFormat: TTSResponseFormat
+    let generationConfig: TTSGenerationConfig
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case input
+        case responseFormat = "response_format"
+        case generationConfig = "generation_config"
+    }
+}
+
+private struct TTSResponseFormat: Encodable {
+    let type: String
+    let mimeType: String
+    let delivery: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mimeType = "mime_type"
+        case delivery
+    }
+}
+
+private struct TTSGenerationConfig: Encodable {
+    let speechConfig: [TTSSpeechConfig]
+
+    enum CodingKeys: String, CodingKey {
+        case speechConfig = "speech_config"
+    }
+}
+
+private struct TTSSpeechConfig: Encodable {
+    let voice: String
+}
+
 private struct GeminiResponse: Decodable {
     let candidates: [Candidate]?
 
@@ -197,6 +344,24 @@ private struct GeminiResponse: Decodable {
                 let text: String?
             }
         }
+    }
+}
+
+private struct TTSInteractionResponse: Decodable {
+    let status: String?
+    let steps: [Step]?
+
+    struct Step: Decodable {
+        let type: String?
+        let content: [Content]?
+    }
+
+    struct Content: Decodable {
+        let type: String
+        let data: String?
+        let mimeType: String?
+        let sampleRate: Int?
+        let channels: Int?
     }
 }
 

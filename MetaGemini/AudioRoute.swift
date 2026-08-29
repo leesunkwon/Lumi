@@ -9,6 +9,7 @@ import Foundation
 enum GlassesAudioRouteError: LocalizedError {
     case glassesMicrophoneUnavailable
     case glassesMicrophoneNotSelected
+    case glassesOutputNotSelected
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +17,8 @@ enum GlassesAudioRouteError: LocalizedError {
             return "Ray-Ban Meta 마이크를 찾지 못했습니다. 안경이 iPhone Bluetooth에 연결되어 있는지 확인해주세요."
         case .glassesMicrophoneNotSelected:
             return "안경 마이크로 전환하지 못했습니다. 다른 Bluetooth 오디오 기기를 끄고 다시 시도해주세요."
+        case .glassesOutputNotSelected:
+            return "안경 스피커로 전환하지 못했습니다. iPhone의 오디오 출력에서 Ray-Ban Meta를 선택해주세요."
         }
     }
 }
@@ -42,6 +45,10 @@ enum GlassesAudioRoute {
         let selectedPort = audioSession.currentRoute.inputs.first
         guard selectedPort?.portType == .bluetoothHFP, selectedPort?.uid == glassesPort.uid else {
             throw GlassesAudioRouteError.glassesMicrophoneNotSelected
+        }
+
+        guard audioSession.currentRoute.outputs.contains(where: isGlassesPort) else {
+            throw GlassesAudioRouteError.glassesOutputNotSelected
         }
     }
 

@@ -176,7 +176,7 @@ struct ContentView: View {
 
             Spacer()
 
-            Text(viewModel.isRecording ? "질문이 끝나면 한 번 더 눌러주세요" : "안경 마이크로 자연스럽게 말해보세요")
+            Text(waveformDetail)
                 .font(.caption)
                 .foregroundStyle(SeedColor.fgSubtle)
                 .multilineTextAlignment(.trailing)
@@ -550,6 +550,7 @@ struct ContentView: View {
 
     private var heroEyebrow: String {
         if viewModel.isRecording { return "LUMI가 듣고 있어요" }
+        if viewModel.isSpeaking { return "LUMI가 답하고 있어요" }
         if viewModel.isProcessing { return "GEMINI와 생각하는 중" }
         if viewModel.isCapturingScene { return "눈앞의 장면을 보는 중" }
         if viewModel.isGlassesAvailable { return "보고 묻고, 듣는 개인 비서" }
@@ -559,6 +560,7 @@ struct ContentView: View {
     private var heroTitle: String {
         if viewModel.isRecording { return "무엇이든\n말해보세요" }
         if viewModel.isStartingVoice { return "마이크를\n준비하고 있어요" }
+        if viewModel.isSpeaking { return "답변을\n들려드리고 있어요" }
         if viewModel.isProcessing { return "답을\n생각하고 있어요" }
         if viewModel.isCapturingScene { return "장면을\n살펴보고 있어요" }
         if viewModel.isGlassesAvailable { return "지금 궁금한 걸\n물어보세요" }
@@ -568,6 +570,7 @@ struct ContentView: View {
     private var heroDetail: String {
         if viewModel.isRecording { return "질문을 마치면 아래 버튼을 한 번 더 눌러 전송하세요." }
         if viewModel.isStartingVoice { return "안경 마이크로 음성 경로를 연결하고 있어요." }
+        if viewModel.isSpeaking { return "Gemini가 만든 자연스러운 한국어 음성을 안경 스피커로 재생하고 있어요." }
         if viewModel.isProcessing { return "질문을 이해하고 가장 도움이 되는 답을 준비하고 있어요." }
         if viewModel.isCapturingScene { return "촬영한 한 장의 사진에서 필요한 정보를 찾고 있어요." }
         if viewModel.isGlassesAvailable { return "버튼을 누르고 안경에 대고 말하면 답을 귀로 들려드려요." }
@@ -576,6 +579,7 @@ struct ContentView: View {
 
     private var heroStatusTitle: String {
         if viewModel.isRecording { return "듣는 중" }
+        if viewModel.isSpeaking { return "답변 재생 중" }
         if viewModel.isProcessing || viewModel.isStartingVoice { return "답변 준비 중" }
         if viewModel.isCapturingScene { return "장면 분석 중" }
         if viewModel.isGlassesAvailable { return "안경 준비됨" }
@@ -585,6 +589,7 @@ struct ContentView: View {
 
     private var heroStatusTone: SeedStatusBadge.Tone {
         if viewModel.isRecording { return .critical }
+        if viewModel.isSpeaking { return .positive }
         if viewModel.isProcessing || viewModel.isStartingVoice || viewModel.isCapturingScene { return .informative }
         if viewModel.isGlassesAvailable { return .positive }
         if viewModel.isRegistering { return .warning }
@@ -598,6 +603,7 @@ struct ContentView: View {
     private var voiceButtonTitle: String {
         if viewModel.isRecording { return "질문 보내기" }
         if viewModel.isStartingVoice { return "마이크 준비 중" }
+        if viewModel.isSpeaking { return "답변 재생 중" }
         if viewModel.isProcessing { return "답변 준비 중" }
         if viewModel.isRegistering { return "Meta AI 연결 중" }
         if viewModel.isGlassesAvailable { return "음성으로 질문하기" }
@@ -611,13 +617,14 @@ struct ContentView: View {
     }
 
     private var isVoiceActionLoading: Bool {
-        viewModel.isStartingVoice || viewModel.isProcessing || viewModel.isRegistering
+        viewModel.isStartingVoice || viewModel.isProcessing || viewModel.isSpeaking || viewModel.isRegistering
     }
 
     private var isVoiceActionDisabled: Bool {
         viewModel.isStartingVoice
             || viewModel.isProcessing
             || viewModel.isCapturingScene
+            || viewModel.isSpeaking
             || viewModel.isRegistering
     }
 
@@ -629,8 +636,15 @@ struct ContentView: View {
 
     private var sceneButtonTitle: String {
         if viewModel.isCapturingScene { return "장면을 살펴보는 중" }
+        if viewModel.isSpeaking { return "답변을 들려드리는 중" }
         if viewModel.isGlassesAvailable { return "지금 보는 장면 설명" }
         return "안경 연결하고 시작"
+    }
+
+    private var waveformDetail: String {
+        if viewModel.isRecording { return "질문이 끝나면 한 번 더 눌러주세요" }
+        if viewModel.isSpeaking { return "따뜻한 Gemini 음성으로 답하고 있어요" }
+        return "안경 마이크로 자연스럽게 말해보세요"
     }
 }
 

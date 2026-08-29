@@ -8,6 +8,12 @@ Ray-Ban Meta와 Gemini로 눈앞의 세상을 이해하는 개인 AI 비서.
 - 안경 카메라 사진 한 장을 Gemini에 보내는 장면 설명
 - “기억해줘” 의도를 감지해 iPhone 로컬에 저장하는 음성 메모
 
+## Gemini 모델 구성
+
+- `gemini-3.1-flash-lite`: 음성 질문 전사·답변 생성과 이미지 장면 분석
+- `gemini-3.1-flash-tts-preview`: 답변을 자연스러운 한국어 음성으로 합성
+- TTS 기본 음성은 따뜻한 톤의 `Sulafat`을 사용하며, 생성된 오디오는 안경 Bluetooth HFP 경로로 재생
+
 ## 실기기 시작 전 준비
 
 1. `Secrets.xcconfig.example`을 복사해 `Secrets.xcconfig`을 만들고 `GEMINI_API_KEY`를 채웁니다.

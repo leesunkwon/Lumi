@@ -16,6 +16,7 @@ final class LumiViewModel {
     var isStartingVoice = false
     var isProcessing = false
     var isCapturingScene = false
+    var isSpeaking = false
     var lastTranscript: String?
     var lastAnswer: String?
     var memoSearchQuery = ""
@@ -34,7 +35,7 @@ final class LumiViewModel {
     }
 
     var isBusy: Bool {
-        isStartingVoice || isRecording || isProcessing || isCapturingScene
+        isStartingVoice || isRecording || isProcessing || isCapturingScene || isSpeaking
     }
 
     var filteredMemos: [VoiceMemo] {
@@ -129,13 +130,16 @@ final class LumiViewModel {
         isCapturingScene = true
 
         Task {
-            defer { isCapturingScene = false }
             do {
                 let photoData = try await glassesCamera.capturePhoto()
                 let result = try await gemini.describeScene(imageData: photoData)
                 apply(result)
-                try await speechOutput.speak(result.answer)
+                let speech = try await gemini.synthesizeSpeech(result.answer)
+                isCapturingScene = false
+                try await playSpeech(speech)
             } catch {
+                isCapturingScene = false
+                isSpeaking = false
                 show(error)
             }
         }
@@ -175,15 +179,18 @@ final class LumiViewModel {
 
             Task {
                 defer {
-                    isProcessing = false
                     try? FileManager.default.removeItem(at: audioURL)
                 }
 
                 do {
                     let result = try await gemini.answerVoiceQuestion(audioURL: audioURL)
                     apply(result)
-                    try await speechOutput.speak(result.answer)
+                    let speech = try await gemini.synthesizeSpeech(result.answer)
+                    isProcessing = false
+                    try await playSpeech(speech)
                 } catch {
+                    isProcessing = false
+                    isSpeaking = false
                     show(error)
                 }
             }
@@ -191,6 +198,12 @@ final class LumiViewModel {
             isRecording = false
             show(error)
         }
+    }
+
+    private func playSpeech(_ speech: SynthesizedSpeech) async throws {
+        isSpeaking = true
+        defer { isSpeaking = false }
+        try await speechOutput.speak(speech)
     }
 
     private func apply(_ result: AssistantResult) {

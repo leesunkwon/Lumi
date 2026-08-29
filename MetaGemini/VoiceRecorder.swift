@@ -80,18 +80,111 @@ final class VoiceRecorder {
 
 @MainActor
 final class SpeechOutput {
-    private let synthesizer = AVSpeechSynthesizer()
+    private var player: AVAudioPlayer?
 
-    func speak(_ text: String) async throws {
+    func speak(_ speech: SynthesizedSpeech) async throws {
         try await GlassesAudioRoute.activate()
 
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
+        player?.stop()
+
+        let audioData = try speech.playableAudioData()
+        let player = try AVAudioPlayer(data: audioData)
+        player.prepareToPlay()
+
+        guard player.play() else {
+            throw SpeechOutputError.playbackFailed
         }
 
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "ko-KR")
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        synthesizer.speak(utterance)
+        self.player = player
+
+        do {
+            while player.isPlaying {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        } catch {
+            player.stop()
+            throw error
+        }
+
+        if self.player === player {
+            self.player = nil
+        }
+    }
+}
+
+private enum SpeechOutputError: LocalizedError {
+    case unsupportedAudioFormat
+    case playbackFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedAudioFormat:
+            return "Gemini 음성 데이터 형식을 재생할 수 없습니다."
+        case .playbackFailed:
+            return "안경에서 Gemini 음성 답변을 재생하지 못했습니다."
+        }
+    }
+}
+
+private extension SynthesizedSpeech {
+    func playableAudioData() throws -> Data {
+        let normalizedMimeType = mimeType.lowercased()
+        if audioData.hasWaveHeader {
+            return audioData
+        }
+
+        let needsWaveContainer = normalizedMimeType.hasPrefix("audio/l16")
+            || normalizedMimeType.contains("pcm")
+            || normalizedMimeType.contains("wav")
+        guard needsWaveContainer else { return audioData }
+
+        guard let dataSize = UInt32(exactly: audioData.count),
+              let channelCount = UInt16(exactly: channelCount),
+              let sampleRate = UInt32(exactly: sampleRate)
+        else {
+            throw SpeechOutputError.unsupportedAudioFormat
+        }
+
+        let bitsPerSample: UInt16 = 16
+        let bytesPerSample = UInt32(bitsPerSample / 8)
+        let byteRate = sampleRate * UInt32(channelCount) * bytesPerSample
+        let blockAlign = channelCount * (bitsPerSample / 8)
+
+        var waveData = Data()
+        waveData.appendASCII("RIFF")
+        waveData.appendLittleEndian(36 + dataSize)
+        waveData.appendASCII("WAVE")
+        waveData.appendASCII("fmt ")
+        waveData.appendLittleEndian(UInt32(16))
+        waveData.appendLittleEndian(UInt16(1))
+        waveData.appendLittleEndian(channelCount)
+        waveData.appendLittleEndian(sampleRate)
+        waveData.appendLittleEndian(byteRate)
+        waveData.appendLittleEndian(blockAlign)
+        waveData.appendLittleEndian(bitsPerSample)
+        waveData.appendASCII("data")
+        waveData.appendLittleEndian(dataSize)
+        waveData.append(audioData)
+        return waveData
+    }
+}
+
+private extension Data {
+    var hasWaveHeader: Bool {
+        count >= 12
+            && prefix(4).elementsEqual("RIFF".utf8)
+            && dropFirst(8).prefix(4).elementsEqual("WAVE".utf8)
+    }
+
+    mutating func appendASCII(_ value: String) {
+        append(contentsOf: value.utf8)
+    }
+
+    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+        var littleEndian = value.littleEndian
+        Swift.withUnsafeBytes(of: &littleEndian) { bytes in
+            append(contentsOf: bytes)
+        }
     }
 }
