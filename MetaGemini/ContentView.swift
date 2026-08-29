@@ -13,6 +13,7 @@ struct ContentView: View {
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
+    @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
     var body: some View {
         Group {
@@ -83,20 +84,24 @@ struct ContentView: View {
             }
             .scrollIndicators(.hidden)
             .background(SeedColor.layerBasement)
-            .navigationTitle("Lumi")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(SeedColor.layerDefault, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    settingsMenu
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
     private var deviceOverview: some View {
         VStack(spacing: 0) {
+            HStack {
+                Text("Lumi")
+                    .font(.system(size: homeTitleSize, weight: .bold, design: .default))
+                    .foregroundStyle(SeedColor.fgNeutral)
+                    .lineLimit(1)
+
+                Spacer()
+
+                settingsMenu
+            }
+            .padding(.top, SeedSpacing.x2)
+
             Image("RayBanMetaGlasses")
                 .resizable()
                 .renderingMode(.original)
@@ -106,7 +111,7 @@ struct ContentView: View {
                 .offset(y: -18)
                 .frame(height: 128)
                 .clipped()
-                .padding(.top, SeedSpacing.x4)
+                .padding(.top, SeedSpacing.x2)
                 .accessibilityHidden(true)
 
             connectionStatus
