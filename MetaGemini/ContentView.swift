@@ -251,7 +251,7 @@ struct ContentView: View {
                 .foregroundStyle(SeedColor.fgNeutral)
 
             if viewModel.isGlassesAvailable {
-                HStack(spacing: SeedSpacing.x2) {
+                HStack(spacing: 0) {
                     deviceActionButton(
                         symbol: "camera",
                         label: sceneButtonTitle,
@@ -260,6 +260,7 @@ struct ContentView: View {
                         isDisabled: viewModel.isBusy || viewModel.isRegistering,
                         action: performSceneAction
                     )
+                    .frame(maxWidth: .infinity)
 
                     deviceActionButton(
                         symbol: voiceActionSymbol,
@@ -271,6 +272,7 @@ struct ContentView: View {
                         isCritical: viewModel.isRecording,
                         action: performVoiceAction
                     )
+                    .frame(maxWidth: .infinity)
 
                     deviceActionButton(
                         symbol: "bubble.left.and.bubble.right",
@@ -280,6 +282,7 @@ struct ContentView: View {
                         isDisabled: false,
                         action: { selectedTab = .conversations }
                     )
+                    .frame(maxWidth: .infinity)
 
                     deviceActionButton(
                         symbol: "bookmark",
@@ -289,6 +292,7 @@ struct ContentView: View {
                         isDisabled: false,
                         action: { selectedTab = .memories }
                     )
+                    .frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
             } else {
