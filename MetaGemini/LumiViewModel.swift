@@ -295,7 +295,7 @@ final class LumiViewModel {
             do {
                 try await voiceRecorder.prepareForRecording()
                 interactionSounds.play(.recordingStarted)
-                try await Task.sleep(for: .milliseconds(180))
+                try await Task.sleep(for: LumiInteractionSound.recordingStarted.playbackDelay)
                 try voiceRecorder.startPreparedRecording()
                 isRecording = true
             } catch {
@@ -311,7 +311,7 @@ final class LumiViewModel {
             isRecording = false
             isProcessing = true
             interactionSounds.play(.questionSent)
-            startWaitingSounds()
+            startWaitingSounds(after: LumiInteractionSound.questionSent.playbackDelay)
             let conversationID = activeConversationID
             let conversation = conversation(for: conversationID)
             let userMemories = memos
@@ -463,17 +463,14 @@ final class LumiViewModel {
         try await speechOutput.speak(speech)
     }
 
-    private func startWaitingSounds() {
+    private func startWaitingSounds(after delay: Duration = .milliseconds(360)) {
         waitingSoundTask?.cancel()
 
         waitingSoundTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .milliseconds(360))
-
-                while !Task.isCancelled {
-                    self?.interactionSounds.play(.waitingPulse)
-                    try await Task.sleep(for: .milliseconds(1_450))
-                }
+                try await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
+                self?.interactionSounds.play(.waitingPulse)
             } catch is CancellationError {
                 return
             } catch {
