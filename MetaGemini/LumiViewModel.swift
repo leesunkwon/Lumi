@@ -436,7 +436,24 @@ final class LumiViewModel {
 
         switch result.action {
         case .answer:
-            if let fallbackSchedule = relativeScheduleDraft(
+            if shouldCaptureParkingMemory(for: result, userMessage: fallbackUserMessage) {
+                let correctedResult = AssistantResult(
+                    transcript: result.transcript,
+                    answer: "",
+                    userMemory: result.userMemory,
+                    shouldSaveUserMemory: result.shouldSaveUserMemory,
+                    action: .saveParking,
+                    timeDetail: nil,
+                    weatherDetail: nil
+                )
+                try await handleVoiceIntent(
+                    correctedResult,
+                    conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: schedules
+                )
+            } else if let fallbackSchedule = relativeScheduleDraft(
                 from: fallbackUserMessage,
                 userMemory: result.userMemory
             ) {
@@ -541,6 +558,40 @@ final class LumiViewModel {
             )
             try await deliver(
                 placeResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID,
+                scenePhotoData: photoData,
+                userMemoryPhotoData: photoData,
+                userMemoryLocation: memoryLocation
+            )
+
+        case .saveParking:
+            isProcessing = false
+            isCapturingScene = true
+
+            let photoData = try await glassesCamera.capturePhoto()
+            let location = try await locationProvider.currentLocation()
+            let memoryLocation = await userMemoryLocation(from: location)
+            let parkingDraft = result.userMemory ?? UserMemoryDraft(
+                title: "주차 위치",
+                body: memoryLocation.displayName,
+                category: .parking
+            )
+            let parkingResult = AssistantResult(
+                transcript: result.transcript,
+                answer: "주차 위치를 사진과 위치 정보로 저장했어요.",
+                userMemory: UserMemoryDraft(
+                    title: parkingDraft.title,
+                    body: parkingDraft.body,
+                    category: .parking
+                ),
+                shouldSaveUserMemory: true,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                parkingResult,
                 fallbackUserMessage: fallbackUserMessage,
                 conversationID: conversationID,
                 scenePhotoData: photoData,
@@ -944,6 +995,15 @@ final class LumiViewModel {
             || (namesCategorizedMemory && directRememberRequest)
     }
 
+    private func shouldCaptureParkingMemory(
+        for result: AssistantResult,
+        userMessage: String
+    ) -> Bool {
+        result.shouldSaveUserMemory
+            && result.userMemory?.category == .parking
+            && hasExplicitUserMemorySaveRequest(in: userMessage)
+    }
+
     private func appendConversationTurn(
         userMessage: String,
         assistantMessage: String,
@@ -1010,6 +1070,10 @@ final class LumiViewModel {
     private func saveUserMemory(_ userMemory: VoiceMemo) {
         memos.removeAll { $0.id == userMemory.id }
         if userMemory.category == .parking {
+            memos
+                .filter { $0.category == .parking }
+                .compactMap(\.photoFilename)
+                .forEach(UserMemoryPhotoStore.delete)
             memos.removeAll { $0.category == .parking }
         }
         memos.append(userMemory)
