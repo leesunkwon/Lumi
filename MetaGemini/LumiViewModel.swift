@@ -178,7 +178,8 @@ final class LumiViewModel {
                 try await deliver(
                     result,
                     fallbackUserMessage: "지금 보는 장면을 설명해줘.",
-                    conversationID: conversationID
+                    conversationID: conversationID,
+                    scenePhotoData: photoData
                 )
             } catch {
                 isCapturingScene = false
@@ -392,7 +393,8 @@ final class LumiViewModel {
             try await deliver(
                 visualResult,
                 fallbackUserMessage: fallbackUserMessage,
-                conversationID: conversationID
+                conversationID: conversationID,
+                scenePhotoData: photoData
             )
         }
     }
@@ -400,12 +402,14 @@ final class LumiViewModel {
     private func deliver(
         _ result: AssistantResult,
         fallbackUserMessage: String,
-        conversationID: UUID?
+        conversationID: UUID?,
+        scenePhotoData: Data? = nil
     ) async throws {
         apply(
             result,
             fallbackUserMessage: fallbackUserMessage,
-            conversationID: conversationID
+            conversationID: conversationID,
+            scenePhotoData: scenePhotoData
         )
         let speech = try await gemini.synthesizeSpeech(result.answer)
         stopWaitingSounds()
@@ -466,14 +470,17 @@ final class LumiViewModel {
     private func apply(
         _ result: AssistantResult,
         fallbackUserMessage: String,
-        conversationID: UUID?
+        conversationID: UUID?,
+        scenePhotoData: Data? = nil
     ) {
         let transcript = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let userMessage = (transcript?.isEmpty == false ? transcript : nil) ?? fallbackUserMessage
+        let photoFilename = scenePhotoData.flatMap { try? ConversationPhotoStore.save($0) }
         appendConversationTurn(
             userMessage: userMessage,
             assistantMessage: result.answer,
-            conversationID: conversationID
+            conversationID: conversationID,
+            photoFilename: photoFilename
         )
 
         if activeConversationID == conversationID {
@@ -525,7 +532,8 @@ final class LumiViewModel {
     private func appendConversationTurn(
         userMessage: String,
         assistantMessage: String,
-        conversationID: UUID?
+        conversationID: UUID?,
+        photoFilename: String?
     ) {
         guard let conversationID,
               let index = conversations.firstIndex(where: { $0.id == conversationID })
@@ -535,7 +543,11 @@ final class LumiViewModel {
 
         var conversation = conversations[index]
         conversation.messages.append(
-            ConversationMessage(role: .user, text: userMessage)
+            ConversationMessage(
+                role: .user,
+                text: userMessage,
+                photoFilename: photoFilename
+            )
         )
         conversation.messages.append(
             ConversationMessage(role: .assistant, text: assistantMessage)

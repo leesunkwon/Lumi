@@ -14,17 +14,20 @@ struct ConversationMessage: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let role: ConversationMessageRole
     let text: String
+    let photoFilename: String?
     let createdAt: Date
 
     init(
         id: UUID = UUID(),
         role: ConversationMessageRole,
         text: String,
+        photoFilename: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
         self.role = role
         self.text = text
+        self.photoFilename = photoFilename
         self.createdAt = createdAt
     }
 }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @Bindable var viewModel: LumiViewModel
@@ -1219,6 +1220,10 @@ private struct ConversationDetailView: View {
                 alignment: message.role == .user ? .trailing : .leading,
                 spacing: SeedSpacing.x1
             ) {
+                if let photoFilename = message.photoFilename {
+                    ConversationPhotoThumbnail(filename: photoFilename)
+                }
+
                 Text(message.text)
                     .font(.body)
                     .foregroundStyle(message.role == .user ? SeedColor.onBrand : SeedColor.fgNeutral)
@@ -1266,6 +1271,35 @@ private struct ConversationDetailView: View {
         DispatchQueue.main.async {
             proxy.scrollTo(bottomAnchor, anchor: .bottom)
         }
+    }
+}
+
+private struct ConversationPhotoThumbnail: View {
+    let filename: String
+
+    var body: some View {
+        Group {
+            if let image = ConversationPhotoStore.image(for: filename) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ContentUnavailableView(
+                    "사진을 불러올 수 없어요",
+                    systemImage: "photo"
+                )
+                .font(.caption)
+                .foregroundStyle(SeedColor.fgSubtle)
+            }
+        }
+        .frame(width: 228, height: 168)
+        .background(SeedColor.layerFill)
+        .clipShape(RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
+                .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+        }
+        .accessibilityLabel("안경으로 촬영한 장면 사진")
     }
 }
 
