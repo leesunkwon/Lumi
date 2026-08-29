@@ -7,7 +7,6 @@ import Foundation
 
 enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
     case general
-    case task
     case schedule
     case parking
 
@@ -17,8 +16,6 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
         switch self {
         case .general:
             return "일반"
-        case .task:
-            return "해야 할 일"
         case .schedule:
             return "일정"
         case .parking:
@@ -30,8 +27,6 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
         switch self {
         case .general:
             return "bookmark"
-        case .task:
-            return "checkmark.circle"
         case .schedule:
             return "calendar"
         case .parking:
@@ -41,6 +36,7 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
 
     static func resolved(from rawValue: String?) -> UserMemoryCategory {
         guard let rawValue else { return .general }
+        if rawValue == "task" { return .schedule }
         return UserMemoryCategory(rawValue: rawValue) ?? .general
     }
 }
