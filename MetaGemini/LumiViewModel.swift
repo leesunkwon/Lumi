@@ -436,11 +436,34 @@ final class LumiViewModel {
 
         switch result.action {
         case .answer:
-            try await deliver(
-                result,
-                fallbackUserMessage: fallbackUserMessage,
-                conversationID: conversationID
-            )
+            if let fallbackSchedule = relativeScheduleDraft(
+                from: fallbackUserMessage,
+                userMemory: result.userMemory
+            ) {
+                let correctedResult = AssistantResult(
+                    transcript: result.transcript,
+                    answer: "",
+                    userMemory: result.userMemory,
+                    shouldSaveUserMemory: result.shouldSaveUserMemory,
+                    action: .createSchedule,
+                    timeDetail: nil,
+                    weatherDetail: nil,
+                    scheduleDetail: fallbackSchedule
+                )
+                try await handleVoiceIntent(
+                    correctedResult,
+                    conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: schedules
+                )
+            } else {
+                try await deliver(
+                    result,
+                    fallbackUserMessage: fallbackUserMessage,
+                    conversationID: conversationID
+                )
+            }
 
         case .currentTime:
             let localTimeResult = AssistantResult(
@@ -692,6 +715,90 @@ final class LumiViewModel {
         ]
 
         return formatters.compactMap { $0.date(from: draft.scheduledAt) }.first
+    }
+
+    private func relativeScheduleDraft(
+        from text: String,
+        userMemory: UserMemoryDraft?
+    ) -> ScheduleDraft? {
+        let normalizedText = text.lowercased()
+        let hasScheduleSubject = ["회의", "약속", "예약", "일정", "마감", "리마인더"].contains {
+            normalizedText.contains($0)
+        }
+        let hasSaveRequest = ["등록", "추가", "기억", "메모", "기록", "저장", "알려줘"].contains {
+            normalizedText.contains($0)
+        }
+
+        guard hasScheduleSubject,
+              hasSaveRequest || userMemory?.category == .schedule,
+              let duration = relativeDuration(in: text),
+              (1...604_800).contains(duration)
+        else {
+            return nil
+        }
+
+        let fallbackTitle = relativeScheduleTitle(in: text)
+        let title = userMemory?.category == .schedule
+            ? userMemory?.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            : fallbackTitle
+        let resolvedTitle = (title?.isEmpty == false ? title : nil) ?? "일정"
+        let scheduledAt = Date.now.addingTimeInterval(TimeInterval(duration))
+        let formatter = ISO8601DateFormatter()
+
+        return ScheduleDraft(
+            title: resolvedTitle,
+            scheduledAt: formatter.string(from: scheduledAt),
+            note: userMemory?.category == .schedule ? userMemory?.body : nil
+        )
+    }
+
+    private func relativeDuration(in text: String) -> Int? {
+        let pattern = #"(\d+)\s*(초|분|시간|일)\s*(뒤|후)"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: text,
+                range: NSRange(text.startIndex..., in: text)
+              ),
+              let valueRange = Range(match.range(at: 1), in: text),
+              let unitRange = Range(match.range(at: 2), in: text),
+              let value = Int(text[valueRange])
+        else {
+            return nil
+        }
+
+        switch text[unitRange] {
+        case "초": return value
+        case "분": return value * 60
+        case "시간": return value * 3_600
+        case "일": return value * 86_400
+        default: return nil
+        }
+    }
+
+    private func relativeScheduleTitle(in text: String) -> String {
+        let removablePhrases = [
+            "등록해줘", "추가해줘", "기억해줘", "메모해줘", "기록해줘", "저장해줘", "알려줘",
+            "일정을", "일정", "리마인더를", "리마인더"
+        ]
+        var title = text
+
+        if let expression = try? NSRegularExpression(pattern: #"\d+\s*(초|분|시간|일)\s*(뒤|후)(에)?"#) {
+            title = expression.stringByReplacingMatches(
+                in: title,
+                range: NSRange(title.startIndex..., in: title),
+                withTemplate: ""
+            )
+        }
+
+        for phrase in removablePhrases {
+            title = title.replacingOccurrences(of: phrase, with: "")
+        }
+
+        let cleaned = title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".,!?"))
+
+        return cleaned.isEmpty ? "일정" : cleaned
     }
 
     private func scheduleDateDescription(_ date: Date) -> String {
