@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var hasSavedLatestAnswer = false
     @State private var isAnswerIslandExpanded = true
     @State private var conversationPath: [UUID] = []
+    @State private var memoryPendingDeletion: VoiceMemo?
+    @State private var isShowingClearAllMemoriesConfirmation = false
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
     var body: some View {
@@ -40,6 +42,39 @@ struct ContentView: View {
             }
         } message: {
             Text(viewModel.errorMessage)
+        }
+        .confirmationDialog(
+            "사용자 메모리를 삭제할까요?",
+            isPresented: Binding(
+                get: { memoryPendingDeletion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        memoryPendingDeletion = nil
+                    }
+                }
+            ),
+            presenting: memoryPendingDeletion
+        ) { memory in
+            Button("삭제", role: .destructive) {
+                viewModel.deleteUserMemory(id: memory.id)
+                memoryPendingDeletion = nil
+            }
+            Button("취소", role: .cancel) {
+                memoryPendingDeletion = nil
+            }
+        } message: { memory in
+            Text("‘\(memory.title)’ 메모리를 삭제하면 복구할 수 없어요.")
+        }
+        .confirmationDialog(
+            "모든 사용자 메모리를 삭제할까요?",
+            isPresented: $isShowingClearAllMemoriesConfirmation
+        ) {
+            Button("전체 삭제", role: .destructive) {
+                viewModel.deleteAllUserMemories()
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("저장된 사용자 메모리 전체가 삭제되며 복구할 수 없어요.")
         }
         .onChange(of: viewModel.lastAnswer) {
             hasSavedLatestAnswer = false
@@ -616,6 +651,11 @@ struct ContentView: View {
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(SeedColor.fgMuted)
                     Spacer()
+                    Button("전체 삭제", role: .destructive) {
+                        isShowingClearAllMemoriesConfirmation = true
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SeedColor.fgMuted)
                 }
                 .padding(.horizontal, SeedSpacing.x4)
                 .padding(.vertical, SeedSpacing.x3)
@@ -659,6 +699,18 @@ struct ContentView: View {
             }
 
             Spacer(minLength: 0)
+
+            Button {
+                memoryPendingDeletion = memo
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(SeedColor.fgSubtle)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(memo.title) 삭제")
         }
         .padding(.horizontal, SeedSpacing.x3)
         .padding(.vertical, SeedSpacing.x3)

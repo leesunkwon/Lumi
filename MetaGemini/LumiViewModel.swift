@@ -149,6 +149,7 @@ final class LumiViewModel {
         isCapturingScene = true
         let conversationID = activeConversationID
         let conversationHistory = conversation(for: conversationID)?.messages ?? []
+        let userMemories = memos
 
         Task {
             do {
@@ -156,7 +157,8 @@ final class LumiViewModel {
                 let result = try await gemini.describeScene(
                     question: "지금 보는 장면을 설명해줘.",
                     imageData: photoData,
-                    conversationHistory: conversationHistory
+                    conversationHistory: conversationHistory,
+                    userMemories: userMemories
                 )
                 try await deliver(
                     result,
@@ -176,6 +178,19 @@ final class LumiViewModel {
 
         let title = lastTranscript.map(conversationTitle(for:)) ?? "Lumi 답변"
         saveUserMemory(VoiceMemo(title: title, body: lastAnswer))
+    }
+
+    func deleteUserMemory(id: UUID) {
+        guard memos.contains(where: { $0.id == id }) else { return }
+        memos.removeAll { $0.id == id }
+        saveUserMemories()
+    }
+
+    func deleteAllUserMemories() {
+        guard !memos.isEmpty else { return }
+        memos.removeAll()
+        memoSearchQuery = ""
+        UserDefaults.standard.removeObject(forKey: Self.memosKey)
     }
 
     @discardableResult
@@ -228,6 +243,7 @@ final class LumiViewModel {
             isProcessing = true
             let conversationID = activeConversationID
             let conversationHistory = conversation(for: conversationID)?.messages ?? []
+            let userMemories = memos
 
             Task {
                 defer {
@@ -237,12 +253,14 @@ final class LumiViewModel {
                 do {
                     let intentResult = try await gemini.answerVoiceQuestion(
                         audioURL: audioURL,
-                        conversationHistory: conversationHistory
+                        conversationHistory: conversationHistory,
+                        userMemories: userMemories
                     )
                     try await handleVoiceIntent(
                         intentResult,
                         conversationID: conversationID,
-                        conversationHistory: conversationHistory
+                        conversationHistory: conversationHistory,
+                        userMemories: userMemories
                     )
                 } catch {
                     isProcessing = false
@@ -260,7 +278,8 @@ final class LumiViewModel {
     private func handleVoiceIntent(
         _ result: AssistantResult,
         conversationID: UUID?,
-        conversationHistory: [ConversationMessage]
+        conversationHistory: [ConversationMessage],
+        userMemories: [VoiceMemo]
     ) async throws {
         let userQuestion = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackUserMessage = (userQuestion?.isEmpty == false ? userQuestion : nil) ?? "음성 질문"
@@ -296,7 +315,8 @@ final class LumiViewModel {
             let visualResult = try await gemini.describeScene(
                 question: fallbackUserMessage,
                 imageData: photoData,
-                conversationHistory: conversationHistory
+                conversationHistory: conversationHistory,
+                userMemories: userMemories
             )
             try await deliver(
                 visualResult,
@@ -451,6 +471,10 @@ final class LumiViewModel {
 
     private func saveUserMemory(_ userMemory: VoiceMemo) {
         memos.insert(userMemory, at: 0)
+        saveUserMemories()
+    }
+
+    private func saveUserMemories() {
         guard let data = try? JSONEncoder().encode(memos) else { return }
         UserDefaults.standard.set(data, forKey: Self.memosKey)
     }

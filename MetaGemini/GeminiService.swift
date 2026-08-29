@@ -60,7 +60,8 @@ struct GeminiService {
 
     func answerVoiceQuestion(
         audioURL: URL,
-        conversationHistory: [ConversationMessage]
+        conversationHistory: [ConversationMessage],
+        userMemories: [VoiceMemo]
     ) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
         return try await generate(
@@ -82,6 +83,7 @@ struct GeminiService {
             audioData: audioData,
             imageData: nil,
             conversationHistory: conversationHistory,
+            userMemories: userMemories,
             userPrompt: "음성 질문을 전사하고 요청을 처리해 주세요."
         )
     }
@@ -89,7 +91,8 @@ struct GeminiService {
     func describeScene(
         question: String = "지금 보는 장면을 설명해줘.",
         imageData: Data,
-        conversationHistory: [ConversationMessage]
+        conversationHistory: [ConversationMessage],
+        userMemories: [VoiceMemo]
     ) async throws -> AssistantResult {
         let result = try await generate(
             instruction: """
@@ -102,6 +105,7 @@ struct GeminiService {
             audioData: nil,
             imageData: imageData,
             conversationHistory: conversationHistory,
+            userMemories: userMemories,
             userPrompt: "사용자 요청: \(question)"
         )
 
@@ -208,10 +212,12 @@ struct GeminiService {
         audioData: Data?,
         imageData: Data?,
         conversationHistory: [ConversationMessage],
+        userMemories: [VoiceMemo],
         userPrompt: String
     ) async throws -> AssistantResult {
         let apiKey = try requireAPIKey()
         let conversationContext = formattedConversationContext(conversationHistory)
+        let userMemoryContext = formattedUserMemoryContext(userMemories)
         let runtimeContext = currentRuntimeContext()
 
         let systemPrompt = """
@@ -226,6 +232,14 @@ struct GeminiService {
         <conversation_history>
         \(conversationContext)
         </conversation_history>
+
+        아래는 사용자가 명시적으로 저장한 사용자 메모리입니다. 각 항목의 기록 시각은 메모리를 저장한 시점이며,
+        현재 시간과 비교해 “지난주에 기억해 둔 일정”처럼 메모리의 상대적인 기록 시점을 해석할 때 참고하세요.
+        기록 시각을 실제 일정이나 사건의 발생 시각으로 단정하지 말고, 메모리 본문에 적힌 날짜·시간을 우선하세요.
+        현재 질문과 관련된 항목만 자연스럽게 사용하고, 메모리 목록 전체를 그대로 나열하지 마세요.
+        <user_memories>
+        \(userMemoryContext)
+        </user_memories>
 
         iPhone에서 읽은 현재 시간입니다. 현재 시각·날짜·요일 관련 질문에서만 이 값을 기준으로 삼으세요.
         <runtime_context>
@@ -341,6 +355,24 @@ struct GeminiService {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .prefix(500)
                 return "\(speaker): \(text)"
+            }
+            .joined(separator: "\n")
+    }
+
+    private func formattedUserMemoryContext(_ memories: [VoiceMemo]) -> String {
+        guard !memories.isEmpty else { return "저장된 사용자 메모리 없음" }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy년 M월 d일 EEEE a h시 mm분"
+
+        return memories
+            .sorted { $0.createdAt > $1.createdAt }
+            .map { memory in
+                let title = memory.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let body = memory.body.trimmingCharacters(in: .whitespacesAndNewlines)
+                return "[기록 시각: \(formatter.string(from: memory.createdAt))] \(title) — \(body)"
             }
             .joined(separator: "\n")
     }
