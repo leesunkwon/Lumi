@@ -29,6 +29,20 @@ struct AssistantResult {
     let transcript: String?
     let answer: String
     let memo: MemoDraft?
+    let action: AssistantAction
+    let timeDetail: TimeDetail?
+}
+
+enum AssistantAction: String, Decodable {
+    case answer
+    case captureScene = "capture_scene"
+    case currentTime = "current_time"
+}
+
+enum TimeDetail: String, Decodable {
+    case time
+    case date
+    case dateTime = "date_time"
 }
 
 struct SynthesizedSpeech {
@@ -50,27 +64,48 @@ struct GeminiService {
         let audioData = try Data(contentsOf: audioURL)
         return try await generate(
             instruction: """
-            사용자의 음성 질문을 한국어로 전사하고 답하세요. 일정, 메모, 아이디어 정리 요청에는 간결하고 실용적으로 답하세요.
+            사용자의 음성 질문을 한국어로 정확히 전사하고, 의도에 맞는 다음 행동을 선택하세요.
+
+            action은 반드시 다음 중 하나입니다.
+            - capture_scene: 사용자가 지금 보고 있는 물건, 메뉴, 문서, 사람, 주변 장면처럼 새 사진을 찍어야만 답할 수 있는 내용을 분석해 달라고 요청한 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요.
+            - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
+            - answer: 사진이나 현재 시간이 필요하지 않은 모든 요청입니다. transcript에 전체 질문을 넣고 자연스러운 답을 작성하세요.
+
+            단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
+            일정, 메모, 아이디어 정리 요청에는 간결하고 실용적으로 답하세요.
             사용자가 '기억해', '메모해', '저장해' 같은 의도를 표현한 경우에만 memo를 채우세요.
             """,
             audioData: audioData,
             imageData: nil,
-            conversationHistory: conversationHistory
+            conversationHistory: conversationHistory,
+            userPrompt: "음성 질문을 전사하고 요청을 처리해 주세요."
         )
     }
 
     func describeScene(
+        question: String = "지금 보는 장면을 설명해줘.",
         imageData: Data,
         conversationHistory: [ConversationMessage]
     ) async throws -> AssistantResult {
-        try await generate(
+        let result = try await generate(
             instruction: """
-            사용자가 보는 장면을 한국어로 2~3문장 안에서 설명하세요. 보이는 물체, 읽을 수 있는 핵심 텍스트,
+            사용자가 안경 카메라로 본 장면에 관해 요청했습니다. 사용자의 질문에 맞춰 한국어로 2~3문장 안에서 답하세요. 보이는 물체, 읽을 수 있는 핵심 텍스트,
             사용자가 다음에 취할 수 있는 실용적인 행동을 우선해서 말하세요. 확실하지 않은 정보는 추측이라고 밝혀야 합니다.
+            사진은 지금 이 요청을 처리하기 위해 새로 촬영된 것이므로 action은 반드시 answer로 설정하세요.
+            사용자가 '기억해', '메모해', '저장해' 같은 의도를 표현한 경우에만 memo를 채우세요.
             """,
             audioData: nil,
             imageData: imageData,
-            conversationHistory: conversationHistory
+            conversationHistory: conversationHistory,
+            userPrompt: "사용자 요청: \(question)"
+        )
+
+        return AssistantResult(
+            transcript: result.transcript,
+            answer: result.answer.isEmpty ? "사진을 분석하지 못했어요. 다시 한 번 시도해 주세요." : result.answer,
+            memo: result.memo,
+            action: .answer,
+            timeDetail: nil
         )
     }
 
@@ -166,10 +201,12 @@ struct GeminiService {
         instruction: String,
         audioData: Data?,
         imageData: Data?,
-        conversationHistory: [ConversationMessage]
+        conversationHistory: [ConversationMessage],
+        userPrompt: String
     ) async throws -> AssistantResult {
         let apiKey = try requireAPIKey()
         let conversationContext = formattedConversationContext(conversationHistory)
+        let runtimeContext = currentRuntimeContext()
 
         let systemPrompt = """
         당신은 Lumi, Ray-Ban Meta와 함께 동작하는 개인 AI 비서입니다.
@@ -184,15 +221,22 @@ struct GeminiService {
         \(conversationContext)
         </conversation_history>
 
+        iPhone에서 읽은 현재 시간입니다. 현재 시각·날짜·요일 관련 질문에서만 이 값을 기준으로 삼으세요.
+        <runtime_context>
+        \(runtimeContext)
+        </runtime_context>
+
         반드시 아래 JSON만 반환하세요. Markdown 코드 블록을 쓰지 마세요.
         {
           "transcript": "음성 입력의 한국어 전사. 이미지 전용이면 빈 문자열",
           "answer": "사용자에게 들려줄 한국어 답변",
-          "memo": { "title": "짧은 제목", "body": "저장할 내용" } 또는 null
+          "memo": { "title": "짧은 제목", "body": "저장할 내용" } 또는 null,
+          "action": "answer | capture_scene | current_time",
+          "timeDetail": "time | date | date_time 또는 null"
         }
         """
 
-        var parts = [GeminiPart(text: "음성 또는 이미지 입력을 분석해 주세요.")]
+        var parts = [GeminiPart(text: userPrompt)]
         if let audioData {
             parts.append(GeminiPart(inlineData: InlineData(mimeType: "audio/mp4", data: audioData.base64EncodedString())))
         }
@@ -246,14 +290,32 @@ struct GeminiService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let payload = try? JSONDecoder().decode(AssistantPayload.self, from: Data(cleanedText.utf8)) {
+            let action = payload.action ?? .answer
+            let answer = payload.answer.trimmingCharacters(in: .whitespacesAndNewlines)
             return AssistantResult(
                 transcript: payload.transcript?.nilIfEmpty,
-                answer: payload.answer,
-                memo: payload.memo
+                answer: action == .answer && answer.isEmpty ? "죄송해요. 다시 한 번 말씀해 주세요." : answer,
+                memo: payload.memo,
+                action: action,
+                timeDetail: payload.timeDetail
             )
         }
 
-        return AssistantResult(transcript: nil, answer: cleanedText, memo: nil)
+        return AssistantResult(
+            transcript: nil,
+            answer: cleanedText,
+            memo: nil,
+            action: .answer,
+            timeDetail: nil
+        )
+    }
+
+    private func currentRuntimeContext(date: Date = .now) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy년 M월 d일 EEEE a h시 mm분"
+        return "\(formatter.string(from: date)) (\(TimeZone.current.identifier))"
     }
 
     private func formattedConversationContext(_ history: [ConversationMessage]) -> String {
@@ -400,6 +462,8 @@ private struct AssistantPayload: Decodable {
     let transcript: String?
     let answer: String
     let memo: MemoDraft?
+    let action: AssistantAction?
+    let timeDetail: TimeDetail?
 }
 
 private extension String {

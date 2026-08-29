@@ -154,17 +154,15 @@ final class LumiViewModel {
             do {
                 let photoData = try await glassesCamera.capturePhoto()
                 let result = try await gemini.describeScene(
+                    question: "지금 보는 장면을 설명해줘.",
                     imageData: photoData,
                     conversationHistory: conversationHistory
                 )
-                apply(
+                try await deliver(
                     result,
                     fallbackUserMessage: "지금 보는 장면을 설명해줘.",
                     conversationID: conversationID
                 )
-                let speech = try await gemini.synthesizeSpeech(result.answer)
-                isCapturingScene = false
-                try await playSpeech(speech)
             } catch {
                 isCapturingScene = false
                 isSpeaking = false
@@ -237,20 +235,18 @@ final class LumiViewModel {
                 }
 
                 do {
-                    let result = try await gemini.answerVoiceQuestion(
+                    let intentResult = try await gemini.answerVoiceQuestion(
                         audioURL: audioURL,
                         conversationHistory: conversationHistory
                     )
-                    apply(
-                        result,
-                        fallbackUserMessage: "음성 질문",
-                        conversationID: conversationID
+                    try await handleVoiceIntent(
+                        intentResult,
+                        conversationID: conversationID,
+                        conversationHistory: conversationHistory
                     )
-                    let speech = try await gemini.synthesizeSpeech(result.answer)
-                    isProcessing = false
-                    try await playSpeech(speech)
                 } catch {
                     isProcessing = false
+                    isCapturingScene = false
                     isSpeaking = false
                     show(error)
                 }
@@ -258,6 +254,88 @@ final class LumiViewModel {
         } catch {
             isRecording = false
             show(error)
+        }
+    }
+
+    private func handleVoiceIntent(
+        _ result: AssistantResult,
+        conversationID: UUID?,
+        conversationHistory: [ConversationMessage]
+    ) async throws {
+        let userQuestion = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackUserMessage = (userQuestion?.isEmpty == false ? userQuestion : nil) ?? "음성 질문"
+
+        switch result.action {
+        case .answer:
+            try await deliver(
+                result,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
+
+        case .currentTime:
+            let localTimeResult = AssistantResult(
+                transcript: result.transcript,
+                answer: currentTimeAnswer(for: result.timeDetail),
+                memo: result.memo,
+                action: .answer,
+                timeDetail: nil
+            )
+            try await deliver(
+                localTimeResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
+
+        case .captureScene:
+            isProcessing = false
+            isCapturingScene = true
+
+            let photoData = try await glassesCamera.capturePhoto()
+            let visualResult = try await gemini.describeScene(
+                question: fallbackUserMessage,
+                imageData: photoData,
+                conversationHistory: conversationHistory
+            )
+            try await deliver(
+                visualResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
+        }
+    }
+
+    private func deliver(
+        _ result: AssistantResult,
+        fallbackUserMessage: String,
+        conversationID: UUID?
+    ) async throws {
+        apply(
+            result,
+            fallbackUserMessage: fallbackUserMessage,
+            conversationID: conversationID
+        )
+        let speech = try await gemini.synthesizeSpeech(result.answer)
+        isProcessing = false
+        isCapturingScene = false
+        try await playSpeech(speech)
+    }
+
+    private func currentTimeAnswer(for detail: TimeDetail?) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+
+        switch detail {
+        case .time:
+            formatter.dateFormat = "a h시 mm분"
+            return "지금은 \(formatter.string(from: .now))이에요."
+        case .date:
+            formatter.dateFormat = "M월 d일 EEEE"
+            return "오늘은 \(formatter.string(from: .now))이에요."
+        case .dateTime, .none:
+            formatter.dateFormat = "M월 d일 EEEE a h시 mm분"
+            return "지금은 \(formatter.string(from: .now))이에요."
         }
     }
 
