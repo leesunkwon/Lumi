@@ -43,7 +43,10 @@ struct GeminiService {
     private let speechModel = "gemini-3.1-flash-tts-preview"
     private let speechVoice = "Sulafat"
 
-    func answerVoiceQuestion(audioURL: URL) async throws -> AssistantResult {
+    func answerVoiceQuestion(
+        audioURL: URL,
+        conversationHistory: [ConversationMessage]
+    ) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
         return try await generate(
             instruction: """
@@ -51,18 +54,23 @@ struct GeminiService {
             사용자가 '기억해', '메모해', '저장해' 같은 의도를 표현한 경우에만 memo를 채우세요.
             """,
             audioData: audioData,
-            imageData: nil
+            imageData: nil,
+            conversationHistory: conversationHistory
         )
     }
 
-    func describeScene(imageData: Data) async throws -> AssistantResult {
+    func describeScene(
+        imageData: Data,
+        conversationHistory: [ConversationMessage]
+    ) async throws -> AssistantResult {
         try await generate(
             instruction: """
             사용자가 보는 장면을 한국어로 2~3문장 안에서 설명하세요. 보이는 물체, 읽을 수 있는 핵심 텍스트,
             사용자가 다음에 취할 수 있는 실용적인 행동을 우선해서 말하세요. 확실하지 않은 정보는 추측이라고 밝혀야 합니다.
             """,
             audioData: nil,
-            imageData: imageData
+            imageData: imageData,
+            conversationHistory: conversationHistory
         )
     }
 
@@ -157,9 +165,11 @@ struct GeminiService {
     private func generate(
         instruction: String,
         audioData: Data?,
-        imageData: Data?
+        imageData: Data?,
+        conversationHistory: [ConversationMessage]
     ) async throws -> AssistantResult {
         let apiKey = try requireAPIKey()
+        let conversationContext = formattedConversationContext(conversationHistory)
 
         let systemPrompt = """
         당신은 Lumi, Ray-Ban Meta와 함께 동작하는 개인 AI 비서입니다.
@@ -167,6 +177,12 @@ struct GeminiService {
 
         answer는 음성으로 들었을 때 자연스러운 한국어 구어체로 작성하세요. 짧고 완결된 문장을 사용하고,
         Markdown 기호, URL, 이모지, 표처럼 소리 내어 읽기 어려운 표현은 사용하지 마세요.
+
+        아래는 현재 대화 세션에서 앞서 나눈 내용입니다. 현재 질문에 도움이 될 때만 자연스럽게 참고하고,
+        이전 내용을 이미 알고 있다고 불필요하게 언급하지 마세요.
+        <conversation_history>
+        \(conversationContext)
+        </conversation_history>
 
         반드시 아래 JSON만 반환하세요. Markdown 코드 블록을 쓰지 마세요.
         {
@@ -238,6 +254,21 @@ struct GeminiService {
         }
 
         return AssistantResult(transcript: nil, answer: cleanedText, memo: nil)
+    }
+
+    private func formattedConversationContext(_ history: [ConversationMessage]) -> String {
+        let recentMessages = history.suffix(10)
+        guard !recentMessages.isEmpty else { return "이전 대화 없음" }
+
+        return recentMessages
+            .map { message in
+                let speaker = message.role == .user ? "사용자" : "Lumi"
+                let text = message.text
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .prefix(500)
+                return "\(speaker): \(text)"
+            }
+            .joined(separator: "\n")
     }
 
     private func requireAPIKey() throws -> String {

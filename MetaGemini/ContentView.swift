@@ -13,6 +13,7 @@ struct ContentView: View {
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
+    @State private var conversationPath: [UUID] = []
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
     var body: some View {
@@ -52,6 +53,12 @@ struct ContentView: View {
                 }
                 .tag(LumiTab.assistant)
 
+            conversationsScreen
+                .tabItem {
+                    Label("대화", systemImage: "bubble.left.and.bubble.right")
+                }
+                .tag(LumiTab.conversations)
+
             memoriesScreen
                 .tabItem {
                     Label("기억", systemImage: "bookmark")
@@ -85,6 +92,92 @@ struct ContentView: View {
             .background(SeedColor.layerDefault)
             .toolbar(.hidden, for: .navigationBar)
         }
+    }
+
+    private var conversationsScreen: some View {
+        NavigationStack(path: $conversationPath) {
+            ScrollView {
+                LazyVStack(spacing: SeedSpacing.x3) {
+                    ForEach(viewModel.conversations) { conversation in
+                        NavigationLink(value: conversation.id) {
+                            conversationRow(conversation)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, SeedSpacing.globalGutter)
+                .padding(.top, SeedSpacing.x3)
+                .padding(.bottom, SeedSpacing.screenBottom)
+            }
+            .scrollIndicators(.hidden)
+            .background(SeedColor.layerDefault)
+            .navigationTitle("대화")
+            .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(for: UUID.self) { conversationID in
+                ConversationDetailView(
+                    viewModel: viewModel,
+                    conversationID: conversationID
+                )
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        let conversationID = viewModel.startNewConversation()
+                        conversationPath.append(conversationID)
+                    } label: {
+                        Label("새 세션", systemImage: "square.and.pencil")
+                    }
+                    .accessibilityHint("새로운 대화 세션을 만들고 엽니다.")
+                }
+            }
+        }
+    }
+
+    private func conversationRow(_ conversation: ConversationSession) -> some View {
+        HStack(alignment: .top, spacing: SeedSpacing.x3) {
+            LumiMark(size: 38)
+
+            VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                HStack(spacing: SeedSpacing.x2) {
+                    Text(conversation.title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(SeedColor.fgNeutral)
+                        .lineLimit(1)
+
+                    if conversation.id == viewModel.activeConversationID {
+                        Text("현재")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(SeedColor.brand)
+                    }
+                }
+
+                Text(conversation.preview)
+                    .font(.subheadline)
+                    .foregroundStyle(SeedColor.fgMuted)
+                    .lineLimit(2)
+
+                Text(conversation.updatedAt.formatted(.relative(presentation: .named)))
+                    .font(.caption)
+                    .foregroundStyle(SeedColor.fgSubtle)
+            }
+
+            Spacer(minLength: SeedSpacing.x2)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(SeedColor.fgSubtle)
+                .padding(.top, SeedSpacing.x1)
+        }
+        .padding(SeedSpacing.x4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
+                .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("이 대화를 현재 세션으로 선택하고 내용을 확인합니다.")
     }
 
     private var deviceOverview: some View {
@@ -624,8 +717,123 @@ struct ContentView: View {
 
 }
 
+private struct ConversationDetailView: View {
+    @Bindable var viewModel: LumiViewModel
+    let conversationID: UUID
+
+    private let bottomAnchor = "conversation-bottom"
+
+    private var conversation: ConversationSession? {
+        viewModel.conversation(for: conversationID)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                if let conversation {
+                    LazyVStack(spacing: SeedSpacing.x4) {
+                        if conversation.messages.isEmpty {
+                            emptyConversationState
+                        } else {
+                            ForEach(conversation.messages) { message in
+                                messageBubble(message)
+                            }
+                        }
+
+                        Color.clear
+                            .frame(height: 1)
+                            .id(bottomAnchor)
+                    }
+                    .padding(.horizontal, SeedSpacing.globalGutter)
+                    .padding(.top, SeedSpacing.x4)
+                    .padding(.bottom, SeedSpacing.screenBottom)
+                } else {
+                    ContentUnavailableView(
+                        "대화를 찾을 수 없어요",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("대화 목록에서 다시 선택해주세요.")
+                    )
+                    .padding(.top, SeedSpacing.x16)
+                }
+            }
+            .scrollIndicators(.hidden)
+            .background(SeedColor.layerDefault)
+            .onAppear {
+                viewModel.selectConversation(conversationID)
+                scrollToLatestMessage(with: proxy)
+            }
+            .onChange(of: conversation?.messages) {
+                scrollToLatestMessage(with: proxy)
+            }
+        }
+        .navigationTitle(conversation?.title ?? "대화")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var emptyConversationState: some View {
+        VStack(spacing: SeedSpacing.x3) {
+            LumiMark(size: 48)
+            Text("새 대화가 준비됐어요")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(SeedColor.fgNeutral)
+            Text("Lumi 탭에서 안경 버튼으로 질문하면 이 대화에 계속 쌓여요.")
+                .font(.subheadline)
+                .foregroundStyle(SeedColor.fgMuted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, SeedSpacing.x14)
+        .padding(.horizontal, SeedSpacing.x5)
+    }
+
+    private func messageBubble(_ message: ConversationMessage) -> some View {
+        HStack(alignment: .bottom, spacing: SeedSpacing.x2) {
+            if message.role == .assistant {
+                LumiMark(size: 28)
+            } else {
+                Spacer(minLength: SeedSpacing.x12)
+            }
+
+            VStack(
+                alignment: message.role == .user ? .trailing : .leading,
+                spacing: SeedSpacing.x1
+            ) {
+                Text(message.text)
+                    .font(.body)
+                    .foregroundStyle(message.role == .user ? SeedColor.fgInverted : SeedColor.fgNeutral)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SeedSpacing.x3)
+                    .padding(.vertical, SeedSpacing.x2_5)
+                    .background(
+                        message.role == .user ? SeedColor.brand : SeedColor.layerFill,
+                        in: RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
+                    )
+
+                Text(message.createdAt.formatted(date: .omitted, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(SeedColor.fgSubtle)
+            }
+            .frame(maxWidth: 280, alignment: message.role == .user ? .trailing : .leading)
+
+            if message.role == .assistant {
+                Spacer(minLength: SeedSpacing.x12)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message.role == .user ? "내 메시지" : "Lumi 메시지")
+    }
+
+    private func scrollToLatestMessage(with proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            proxy.scrollTo(bottomAnchor, anchor: .bottom)
+        }
+    }
+}
+
 private enum LumiTab: Hashable {
     case assistant
+    case conversations
     case memories
 }
 

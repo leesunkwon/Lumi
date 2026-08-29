@@ -19,6 +19,8 @@ final class LumiViewModel {
     var isSpeaking = false
     var lastTranscript: String?
     var lastAnswer: String?
+    var conversations: [ConversationSession] = []
+    var activeConversationID: UUID?
     var memoSearchQuery = ""
     var memos: [VoiceMemo] = []
     var isShowingError = false
@@ -48,6 +50,10 @@ final class LumiViewModel {
         }
     }
 
+    var activeConversationMessages: [ConversationMessage] {
+        conversation(for: activeConversationID)?.messages ?? []
+    }
+
     @ObservationIgnored private let wearables: WearablesInterface
     @ObservationIgnored private let voiceRecorder = VoiceRecorder()
     @ObservationIgnored private let speechOutput = SpeechOutput()
@@ -60,6 +66,19 @@ final class LumiViewModel {
         self.wearables = wearables
         self.glassesCamera = GlassesCamera(wearables: wearables)
         self.memos = Self.loadMemos()
+
+        let storedConversations = Self.loadConversations()
+        let initialConversation = ConversationSession()
+        self.conversations = storedConversations.isEmpty ? [initialConversation] : storedConversations
+
+        let storedActiveConversationID = UserDefaults.standard.string(forKey: Self.activeConversationKey)
+            .flatMap(UUID.init(uuidString:))
+        if let storedActiveConversationID,
+           self.conversations.contains(where: { $0.id == storedActiveConversationID }) {
+            self.activeConversationID = storedActiveConversationID
+        } else {
+            self.activeConversationID = self.conversations.first?.id
+        }
 
         if let configurationError {
             self.errorMessage = "Meta 안경 SDK를 초기화하지 못했습니다: \(configurationError)"
@@ -128,12 +147,21 @@ final class LumiViewModel {
     func describeScene() {
         guard !isBusy, isGlassesAvailable else { return }
         isCapturingScene = true
+        let conversationID = activeConversationID
+        let conversationHistory = conversation(for: conversationID)?.messages ?? []
 
         Task {
             do {
                 let photoData = try await glassesCamera.capturePhoto()
-                let result = try await gemini.describeScene(imageData: photoData)
-                apply(result)
+                let result = try await gemini.describeScene(
+                    imageData: photoData,
+                    conversationHistory: conversationHistory
+                )
+                apply(
+                    result,
+                    fallbackUserMessage: "지금 보는 장면을 설명해줘.",
+                    conversationID: conversationID
+                )
                 let speech = try await gemini.synthesizeSpeech(result.answer)
                 isCapturingScene = false
                 try await playSpeech(speech)
@@ -150,6 +178,30 @@ final class LumiViewModel {
 
         let body = lastTranscript.map { "질문: \($0)\n\n답변: \(lastAnswer)" } ?? lastAnswer
         saveMemo(VoiceMemo(title: "Lumi 답변", body: body))
+    }
+
+    @discardableResult
+    func startNewConversation() -> UUID {
+        let conversation = ConversationSession()
+        conversations.insert(conversation, at: 0)
+        activeConversationID = conversation.id
+        lastTranscript = nil
+        lastAnswer = nil
+        saveConversations()
+        return conversation.id
+    }
+
+    func selectConversation(_ id: UUID) {
+        guard let conversation = conversation(for: id) else { return }
+        activeConversationID = id
+        lastTranscript = conversation.messages.last(where: { $0.role == .user })?.text
+        lastAnswer = conversation.messages.last(where: { $0.role == .assistant })?.text
+        saveConversations()
+    }
+
+    func conversation(for id: UUID?) -> ConversationSession? {
+        guard let id else { return nil }
+        return conversations.first { $0.id == id }
     }
 
     func dismissError() {
@@ -176,6 +228,8 @@ final class LumiViewModel {
             let audioURL = try voiceRecorder.stop()
             isRecording = false
             isProcessing = true
+            let conversationID = activeConversationID
+            let conversationHistory = conversation(for: conversationID)?.messages ?? []
 
             Task {
                 defer {
@@ -183,8 +237,15 @@ final class LumiViewModel {
                 }
 
                 do {
-                    let result = try await gemini.answerVoiceQuestion(audioURL: audioURL)
-                    apply(result)
+                    let result = try await gemini.answerVoiceQuestion(
+                        audioURL: audioURL,
+                        conversationHistory: conversationHistory
+                    )
+                    apply(
+                        result,
+                        fallbackUserMessage: "음성 질문",
+                        conversationID: conversationID
+                    )
                     let speech = try await gemini.synthesizeSpeech(result.answer)
                     isProcessing = false
                     try await playSpeech(speech)
@@ -206,13 +267,65 @@ final class LumiViewModel {
         try await speechOutput.speak(speech)
     }
 
-    private func apply(_ result: AssistantResult) {
-        lastTranscript = result.transcript
-        lastAnswer = result.answer
+    private func apply(
+        _ result: AssistantResult,
+        fallbackUserMessage: String,
+        conversationID: UUID?
+    ) {
+        let transcript = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userMessage = (transcript?.isEmpty == false ? transcript : nil) ?? fallbackUserMessage
+        appendConversationTurn(
+            userMessage: userMessage,
+            assistantMessage: result.answer,
+            conversationID: conversationID
+        )
+
+        if activeConversationID == conversationID {
+            lastTranscript = transcript
+            lastAnswer = result.answer
+        }
 
         if let memo = result.memo {
             saveMemo(VoiceMemo(title: memo.title, body: memo.body))
         }
+    }
+
+    private func appendConversationTurn(
+        userMessage: String,
+        assistantMessage: String,
+        conversationID: UUID?
+    ) {
+        guard let conversationID,
+              let index = conversations.firstIndex(where: { $0.id == conversationID })
+        else {
+            return
+        }
+
+        var conversation = conversations[index]
+        conversation.messages.append(
+            ConversationMessage(role: .user, text: userMessage)
+        )
+        conversation.messages.append(
+            ConversationMessage(role: .assistant, text: assistantMessage)
+        )
+        conversation.updatedAt = .now
+
+        if conversation.title == "새 대화" {
+            conversation.title = conversationTitle(for: userMessage)
+        }
+
+        conversations[index] = conversation
+        conversations.sort { $0.updatedAt > $1.updatedAt }
+        saveConversations()
+    }
+
+    private func conversationTitle(for text: String) -> String {
+        let normalizedText = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalizedText.isEmpty else { return "새 대화" }
+        return String(normalizedText.prefix(28))
     }
 
     private func updateRegistrationState(_ state: RegistrationState) {
@@ -247,6 +360,8 @@ final class LumiViewModel {
     }
 
     private static let memosKey = "lumi.voice-memos"
+    private static let conversationsKey = "lumi.conversations"
+    private static let activeConversationKey = "lumi.active-conversation-id"
 
     private static func loadMemos() -> [VoiceMemo] {
         guard let data = UserDefaults.standard.data(forKey: memosKey),
@@ -256,6 +371,22 @@ final class LumiViewModel {
         }
 
         return memos.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func saveConversations() {
+        guard let data = try? JSONEncoder().encode(conversations) else { return }
+        UserDefaults.standard.set(data, forKey: Self.conversationsKey)
+        UserDefaults.standard.set(activeConversationID?.uuidString, forKey: Self.activeConversationKey)
+    }
+
+    private static func loadConversations() -> [ConversationSession] {
+        guard let data = UserDefaults.standard.data(forKey: conversationsKey),
+              let conversations = try? JSONDecoder().decode([ConversationSession].self, from: data)
+        else {
+            return []
+        }
+
+        return conversations.sorted { $0.updatedAt > $1.updatedAt }
     }
 }
 
