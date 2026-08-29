@@ -590,8 +590,19 @@ struct ContentView: View {
                     .background(SeedColor.layerDefault)
 
                 memoryCategoryFilter
+                    .padding(.bottom, SeedSpacing.x2)
+                    .background(SeedColor.layerDefault)
+
+                memoryDateFilter
                     .padding(.bottom, SeedSpacing.x3)
                     .background(SeedColor.layerDefault)
+
+                if viewModel.selectedMemoryDateFilter == .custom {
+                    memoryDatePicker
+                        .padding(.horizontal, SeedSpacing.globalGutter)
+                        .padding(.bottom, SeedSpacing.x3)
+                        .background(SeedColor.layerDefault)
+                }
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: SeedSpacing.x4) {
@@ -700,6 +711,81 @@ struct ContentView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
+    private var memoryDateFilter: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: SeedSpacing.x2) {
+                ForEach(
+                    [
+                        UserMemoryDateFilter.all,
+                        .today,
+                        .yesterday,
+                        .thisWeek,
+                        .custom
+                    ],
+                    id: \.self
+                ) { filter in
+                    memoryDateFilterButton(filter)
+                }
+            }
+            .padding(.horizontal, SeedSpacing.globalGutter)
+        }
+        .scrollIndicators(.hidden)
+        .accessibilityLabel("사용자 메모리 날짜 필터")
+    }
+
+    private func memoryDateFilterButton(_ filter: UserMemoryDateFilter) -> some View {
+        let isSelected = viewModel.selectedMemoryDateFilter == filter
+
+        return Button {
+            viewModel.selectedMemoryDateFilter = filter
+        } label: {
+            HStack(spacing: SeedSpacing.x1) {
+                if filter == .custom {
+                    Image(systemName: "calendar")
+                }
+                Text(filter.title)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(isSelected ? SeedColor.onBrand : SeedColor.fgMuted)
+            .padding(.horizontal, SeedSpacing.x3)
+            .frame(minHeight: 36)
+            .background(
+                isSelected ? SeedColor.brand : SeedColor.layerFill,
+                in: Capsule()
+            )
+            .overlay {
+                if !isSelected {
+                    Capsule()
+                        .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(filter.title) 메모리 보기")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var memoryDatePicker: some View {
+        HStack(spacing: SeedSpacing.x2) {
+            Label("기록 날짜", systemImage: "calendar")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(SeedColor.fgMuted)
+
+            Spacer()
+
+            DatePicker(
+                "기록 날짜",
+                selection: $viewModel.selectedMemoryDate,
+                in: ...Date.now,
+                displayedComponents: .date
+            )
+            .labelsHidden()
+        }
+        .padding(.horizontal, SeedSpacing.x3)
+        .frame(minHeight: 44)
+        .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+    }
+
     @ViewBuilder
     private var memoryContent: some View {
         if viewModel.memos.isEmpty {
@@ -719,13 +805,12 @@ struct ContentView: View {
             VStack(spacing: SeedSpacing.x4) {
                 emptyMemoryState(
                     symbol: "magnifyingglass",
-                    title: viewModel.memoSearchQuery.isEmpty ? "선택한 카테고리에 메모리가 없어요" : "검색 결과가 없어요",
-                    detail: viewModel.memoSearchQuery.isEmpty ? "다른 카테고리를 선택하거나 직접 추가해보세요." : "다른 검색어로 다시 찾아보세요."
+                    title: memoryEmptyFilterTitle,
+                    detail: memoryEmptyFilterDetail
                 )
 
                 Button("필터 지우기") {
-                    viewModel.memoSearchQuery = ""
-                    viewModel.selectedMemoryCategory = nil
+                    viewModel.clearMemoryFilters()
                 }
                 .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
             }
@@ -758,6 +843,18 @@ struct ContentView: View {
             }
             .seedSurface(radius: SeedRadius.r4)
         }
+    }
+
+    private var memoryEmptyFilterTitle: String {
+        if !viewModel.memoSearchQuery.isEmpty { return "검색 결과가 없어요" }
+        if viewModel.hasActiveMemoryDateFilter { return "선택한 날짜에 메모리가 없어요" }
+        return "선택한 카테고리에 메모리가 없어요"
+    }
+
+    private var memoryEmptyFilterDetail: String {
+        if !viewModel.memoSearchQuery.isEmpty { return "다른 검색어로 다시 찾아보세요." }
+        if viewModel.hasActiveMemoryDateFilter { return "다른 날짜를 선택하거나 날짜 필터를 지워보세요." }
+        return "다른 카테고리를 선택하거나 직접 추가해보세요."
     }
 
     private func memoryRow(_ memo: VoiceMemo, showsManagement: Bool = false) -> some View {

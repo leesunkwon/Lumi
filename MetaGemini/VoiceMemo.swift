@@ -45,6 +45,29 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 }
 
+enum UserMemoryDateFilter: Hashable {
+    case all
+    case today
+    case yesterday
+    case thisWeek
+    case custom
+
+    var title: String {
+        switch self {
+        case .all:
+            return "전체 날짜"
+        case .today:
+            return "오늘"
+        case .yesterday:
+            return "어제"
+        case .thisWeek:
+            return "이번 주"
+        case .custom:
+            return "날짜 선택"
+        }
+    }
+}
+
 struct VoiceMemo: Codable, Identifiable, Hashable {
     let id: UUID
     let title: String

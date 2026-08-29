@@ -23,6 +23,8 @@ final class LumiViewModel {
     var activeConversationID: UUID?
     var memoSearchQuery = ""
     var selectedMemoryCategory: UserMemoryCategory?
+    var selectedMemoryDateFilter: UserMemoryDateFilter = .all
+    var selectedMemoryDate = Date.now
     var memos: [VoiceMemo] = []
     var isShowingError = false
     var errorMessage = ""
@@ -46,12 +48,17 @@ final class LumiViewModel {
         let categoryMemos = selectedMemoryCategory.map { category in
             memos.filter { $0.category == category }
         } ?? memos
-        guard !query.isEmpty else { return categoryMemos }
+        let datedMemos = categoryMemos.filter { matchesSelectedMemoryDate($0) }
+        guard !query.isEmpty else { return datedMemos }
 
-        return categoryMemos.filter {
+        return datedMemos.filter {
             $0.title.localizedCaseInsensitiveContains(query)
                 || $0.body.localizedCaseInsensitiveContains(query)
         }
+    }
+
+    var hasActiveMemoryDateFilter: Bool {
+        selectedMemoryDateFilter != .all
     }
 
     var activeConversationMessages: [ConversationMessage] {
@@ -237,6 +244,8 @@ final class LumiViewModel {
         memos.removeAll()
         memoSearchQuery = ""
         selectedMemoryCategory = nil
+        selectedMemoryDateFilter = .all
+        selectedMemoryDate = .now
         UserDefaults.standard.removeObject(forKey: Self.memosKey)
     }
 
@@ -266,6 +275,13 @@ final class LumiViewModel {
 
     func dismissError() {
         isShowingError = false
+    }
+
+    func clearMemoryFilters() {
+        memoSearchQuery = ""
+        selectedMemoryCategory = nil
+        selectedMemoryDateFilter = .all
+        selectedMemoryDate = .now
     }
 
     private func startVoiceQuestion() {
@@ -572,6 +588,24 @@ final class LumiViewModel {
         memos.append(userMemory)
         memos.sort { $0.createdAt > $1.createdAt }
         saveUserMemories()
+    }
+
+    private func matchesSelectedMemoryDate(_ memory: VoiceMemo) -> Bool {
+        let calendar = Calendar.current
+
+        switch selectedMemoryDateFilter {
+        case .all:
+            return true
+        case .today:
+            return calendar.isDateInToday(memory.createdAt)
+        case .yesterday:
+            return calendar.isDateInYesterday(memory.createdAt)
+        case .thisWeek:
+            guard let week = calendar.dateInterval(of: .weekOfYear, for: .now) else { return false }
+            return week.contains(memory.createdAt)
+        case .custom:
+            return calendar.isDate(memory.createdAt, inSameDayAs: selectedMemoryDate)
+        }
     }
 
     private func saveUserMemories() {
