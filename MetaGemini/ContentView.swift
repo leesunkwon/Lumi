@@ -13,6 +13,7 @@ struct ContentView: View {
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
+    @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 44
 
     var body: some View {
         Group {
@@ -64,85 +65,125 @@ struct ContentView: View {
     private var assistantDashboard: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: SeedSpacing.x6) {
+                LazyVStack(spacing: 0) {
                     deviceOverview
+                        .padding(.horizontal, SeedSpacing.globalGutter)
+                        .background(SeedColor.layerDefault)
 
-                    if let answer = viewModel.lastAnswer {
-                        answerCard(answer)
+                    LazyVStack(spacing: SeedSpacing.x6) {
+                        if let answer = viewModel.lastAnswer {
+                            answerCard(answer)
+                        }
+
+                        recentMemoriesSection
                     }
-
-                    quickActionsSection
-                    recentMemoriesSection
+                    .padding(.horizontal, SeedSpacing.globalGutter)
+                    .padding(.top, SeedSpacing.x6)
+                    .padding(.bottom, SeedSpacing.screenBottom)
                 }
-                .padding(.horizontal, SeedSpacing.globalGutter)
-                .padding(.top, SeedSpacing.x3)
-                .padding(.bottom, SeedSpacing.screenBottom)
             }
             .scrollIndicators(.hidden)
             .background(SeedColor.layerBasement)
-            .navigationTitle("Lumi")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    settingsMenu
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
     private var deviceOverview: some View {
-        VStack(spacing: SeedSpacing.x4) {
+        VStack(spacing: 0) {
+            HStack(alignment: .center) {
+                Text("Lumi")
+                    .font(.system(size: homeTitleSize, weight: .bold, design: .default))
+                    .foregroundStyle(SeedColor.fgNeutral)
+                    .lineLimit(1)
+
+                Spacer()
+
+                settingsMenu
+            }
+            .padding(.top, SeedSpacing.x4)
+
             Image("RayBanMetaGlasses")
                 .resizable()
                 .renderingMode(.original)
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(maxWidth: 360)
-                .scaleEffect(1.08)
-                .offset(y: -22)
-                .frame(height: 165)
+                .scaleEffect(1.05)
+                .offset(y: -25)
+                .frame(height: 190)
                 .clipped()
+                .padding(.top, SeedSpacing.x12)
                 .accessibilityHidden(true)
 
-            VStack(spacing: SeedSpacing.x1) {
-                Text("Ray-Ban Meta")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(SeedColor.fgNeutral)
+            connectionStatus
+                .padding(.top, SeedSpacing.x3)
 
-                connectionStatus
+            if shouldShowActivityDetail {
+                Text(voiceActivityDetail)
+                    .font(.footnote)
+                    .foregroundStyle(viewModel.isRecording ? SeedColor.critical : SeedColor.fgSubtle)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, SeedSpacing.x2)
             }
 
-            Button(action: performVoiceAction) {
-                HStack(spacing: SeedSpacing.x2) {
-                    if isVoiceActionLoading {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: voiceButtonIcon)
-                            .symbolVariant(.fill)
-                    }
-                    Text(voiceButtonTitle)
+            if viewModel.isGlassesAvailable {
+                HStack {
+                    deviceActionButton(
+                        symbol: "camera",
+                        label: sceneButtonTitle,
+                        hint: "안경 카메라로 사진 한 장을 촬영해 장면을 설명합니다.",
+                        isLoading: viewModel.isCapturingScene,
+                        isDisabled: viewModel.isBusy || viewModel.isRegistering,
+                        action: performSceneAction
+                    )
+
+                    Spacer()
+
+                    deviceActionButton(
+                        symbol: voiceActionSymbol,
+                        label: voiceButtonTitle,
+                        hint: voiceButtonAccessibilityHint,
+                        isLoading: isVoiceActionLoading,
+                        isDisabled: isVoiceActionDisabled,
+                        isCritical: viewModel.isRecording,
+                        action: performVoiceAction
+                    )
                 }
+                .padding(.horizontal, SeedSpacing.x12)
+                .padding(.top, SeedSpacing.x12)
+            } else {
+                Button(action: performVoiceAction) {
+                    HStack(spacing: SeedSpacing.x2) {
+                        if viewModel.isRegistering {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "link")
+                        }
+                        Text(viewModel.isRegistering ? "연결 중" : "안경 연결")
+                    }
+                }
+                .buttonStyle(SeedActionButtonStyle(variant: .neutralSolid))
+                .disabled(viewModel.isRegistering)
+                .padding(.top, SeedSpacing.x10)
+                .accessibilityHint("Meta AI 앱에서 Lumi와 안경의 연결을 시작합니다.")
             }
-            .buttonStyle(
-                SeedActionButtonStyle(
-                    variant: viewModel.isRecording ? .criticalSolid : .neutralSolid
-                )
-            )
-            .disabled(isVoiceActionDisabled)
-            .accessibilityLabel(voiceButtonTitle)
-            .accessibilityHint(voiceButtonAccessibilityHint)
-            .accessibilityValue(deviceConnectionTitle)
 
-            Text(voiceActivityDetail)
-                .font(.footnote)
-                .foregroundStyle(viewModel.isRecording ? SeedColor.critical : SeedColor.fgSubtle)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: SeedSpacing.x2) {
+                Image(systemName: "lock.fill")
+                    .font(.caption2)
+                    .frame(width: 14, height: 14)
+
+                Text("사진은 장면 설명에만 사용하며 기기에 저장하지 않아요.")
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(SeedColor.fgSubtle)
+            .padding(.top, SeedSpacing.x8)
+            .padding(.bottom, SeedSpacing.x10)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, SeedSpacing.x2)
-        .padding(.bottom, SeedSpacing.x2)
     }
 
     @ViewBuilder
@@ -152,18 +193,48 @@ struct ContentView: View {
                 ProgressView()
                     .controlSize(.mini)
                     .tint(deviceConnectionColor)
-            } else {
-                Circle()
-                    .fill(deviceConnectionColor)
-                    .frame(width: 8, height: 8)
             }
 
             Text(deviceConnectionTitle)
-                .font(.subheadline.weight(.medium))
+                .font(.title3.weight(.regular))
         }
         .foregroundStyle(deviceConnectionColor)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("안경 연결 상태")
+        .accessibilityLabel("Ray-Ban Meta")
+        .accessibilityValue(deviceConnectionTitle)
+    }
+
+    private func deviceActionButton(
+        symbol: String,
+        label: String,
+        hint: String,
+        isLoading: Bool,
+        isDisabled: Bool,
+        isCritical: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(isCritical ? SeedColor.critical : SeedColor.deviceControl)
+
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: 27, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 76, height: 76)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled && !isLoading ? 0.42 : 1)
+        .accessibilityLabel(label)
+        .accessibilityHint(hint)
         .accessibilityValue(deviceConnectionTitle)
     }
 
@@ -221,62 +292,6 @@ struct ContentView: View {
         }
         .padding(SeedSpacing.x4)
         .seedSurface()
-    }
-
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: SeedSpacing.x3) {
-            sectionHeader(title: "카메라", detail: "안경으로 지금 보고 있는 장면을 이해해요")
-
-            Button(action: performSceneAction) {
-                HStack(alignment: .top, spacing: SeedSpacing.x3) {
-                    iconTile(symbol: "camera.viewfinder", color: SeedColor.informative)
-
-                    VStack(alignment: .leading, spacing: SeedSpacing.x1) {
-                        Text(sceneButtonTitle)
-                            .font(SeedTypography.cardTitle)
-                            .foregroundStyle(SeedColor.fgNeutral)
-                        Text("사진 한 장을 찍어 메뉴, 문서, 주변 장면을 설명해요.")
-                            .font(SeedTypography.caption)
-                            .foregroundStyle(SeedColor.fgMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: SeedSpacing.x2)
-
-                    if viewModel.isCapturingScene {
-                        ProgressView()
-                            .tint(SeedColor.fgSubtle)
-                    } else {
-                        Image(systemName: "chevron.right")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(SeedColor.fgSubtle)
-                    }
-                }
-                .padding(SeedSpacing.x4)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.isBusy || viewModel.isRegistering)
-            .seedSurface(radius: SeedRadius.r4)
-            .accessibilityHint(
-                viewModel.isGlassesAvailable
-                    ? "안경 카메라로 사진을 촬영해 Gemini에 설명을 요청합니다."
-                    : "Meta AI 앱에서 안경 연결을 시작합니다."
-            )
-
-            HStack(alignment: .top, spacing: SeedSpacing.x2) {
-                Image(systemName: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(SeedColor.fgSubtle)
-                    .frame(width: 16, height: 16)
-
-                Text("사진은 장면 설명에만 사용하며 기기에 저장하지 않아요.")
-                    .font(.footnote)
-                    .foregroundStyle(SeedColor.fgSubtle)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, SeedSpacing.x2)
-        }
     }
 
     private var recentMemoriesSection: some View {
@@ -488,15 +503,6 @@ struct ContentView: View {
         }
     }
 
-    private func iconTile(symbol: String, color: Color) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 21, weight: .semibold))
-            .foregroundStyle(color)
-            .frame(width: 48, height: 48)
-            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
-            .accessibilityHidden(true)
-    }
-
     private var settingsMenu: some View {
         Menu {
             if !viewModel.isGlassesAvailable {
@@ -514,10 +520,13 @@ struct ContentView: View {
                 Label("Lumi 소개 다시 보기", systemImage: "rectangle.on.rectangle")
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "slider.vertical.3")
+                .font(.system(size: 23, weight: .semibold))
                 .foregroundStyle(SeedColor.fgNeutral)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
-        .accessibilityLabel("Lumi 메뉴")
+        .accessibilityLabel("설정")
     }
 
     private func performVoiceAction() {
@@ -544,8 +553,12 @@ struct ContentView: View {
 
     private var deviceConnectionColor: Color {
         if viewModel.isRegistering { return SeedColor.brand }
-        if viewModel.isGlassesAvailable { return SeedColor.positive }
+        if viewModel.isGlassesAvailable { return SeedColor.fgNeutral }
         return SeedColor.fgSubtle
+    }
+
+    private var shouldShowActivityDetail: Bool {
+        !viewModel.isGlassesAvailable || viewModel.isBusy || viewModel.isRegistering
     }
 
     private var voiceActivityDetail: String {
@@ -569,10 +582,9 @@ struct ContentView: View {
         return "안경 연결 시작"
     }
 
-    private var voiceButtonIcon: String {
+    private var voiceActionSymbol: String {
         if viewModel.isRecording { return "stop.fill" }
-        if viewModel.isGlassesAvailable { return "mic.fill" }
-        return "eyeglasses"
+        return "paperplane"
     }
 
     private var isVoiceActionLoading: Bool {
