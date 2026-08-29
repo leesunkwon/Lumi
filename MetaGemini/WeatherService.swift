@@ -162,21 +162,23 @@ final class WeatherService {
         numberOfRows: Int
     ) async throws -> [KMAWeatherItem] {
         let apiKey = try requireAPIKey()
-        let decodedAPIKey = apiKey.removingPercentEncoding ?? apiKey
 
         guard var components = URLComponents(string: "\(serviceBaseURL)/\(endpoint)") else {
             throw WeatherServiceError.invalidResponse
         }
-        components.queryItems = [
-            URLQueryItem(name: "serviceKey", value: decodedAPIKey),
-            URLQueryItem(name: "numOfRows", value: String(numberOfRows)),
-            URLQueryItem(name: "pageNo", value: "1"),
-            URLQueryItem(name: "dataType", value: "JSON"),
-            URLQueryItem(name: "base_date", value: baseDate),
-            URLQueryItem(name: "base_time", value: baseTime),
-            URLQueryItem(name: "nx", value: String(grid.x)),
-            URLQueryItem(name: "ny", value: String(grid.y))
+        let queryItems = [
+            ("serviceKey", apiKey),
+            ("numOfRows", String(numberOfRows)),
+            ("pageNo", "1"),
+            ("dataType", "JSON"),
+            ("base_date", baseDate),
+            ("base_time", baseTime),
+            ("nx", String(grid.x)),
+            ("ny", String(grid.y))
         ]
+        components.percentEncodedQuery = queryItems
+            .map { "\($0.0)=\(percentEncodedQueryValue($0.1))" }
+            .joined(separator: "&")
 
         guard let url = components.url else {
             throw WeatherServiceError.invalidResponse
@@ -186,13 +188,19 @@ final class WeatherService {
         urlRequest.timeoutInterval = 20
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode)
-        else {
-            throw WeatherServiceError.serviceError("네트워크 응답을 확인할 수 없습니다.")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WeatherServiceError.invalidResponse
         }
 
-        let decodedResponse = try JSONDecoder().decode(KMAWeatherResponse.self, from: data)
+        let decodedResponse = try? JSONDecoder().decode(KMAWeatherResponse.self, from: data)
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw WeatherServiceError.serviceError(
+                decodedResponse?.response.header.resultMsg ?? "HTTP \(httpResponse.statusCode)"
+            )
+        }
+        guard let decodedResponse else {
+            throw WeatherServiceError.invalidResponse
+        }
         guard decodedResponse.response.header.resultCode == "00" else {
             throw WeatherServiceError.serviceError(decodedResponse.response.header.resultMsg ?? "알 수 없는 오류")
         }
@@ -436,6 +444,13 @@ final class WeatherService {
         Int(time.prefix(2))
     }
 
+    private func percentEncodedQueryValue(_ value: String) -> String {
+        let decodedValue = value.removingPercentEncoding ?? value
+        var allowedCharacters = CharacterSet.urlQueryAllowed
+        allowedCharacters.remove(charactersIn: ":#[]@!$&'()*+,;=/?%")
+        return decodedValue.addingPercentEncoding(withAllowedCharacters: allowedCharacters) ?? decodedValue
+    }
+
     private func requireAPIKey() throws -> String {
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "KMAWeatherAPIKey") as? String,
               !apiKey.isEmpty,
@@ -470,10 +485,6 @@ private final class CurrentLocationProvider: NSObject, CLLocationManagerDelegate
     }
 
     func currentLocation() async throws -> CLLocation {
-        guard CLLocationManager.locationServicesEnabled() else {
-            throw WeatherServiceError.locationServicesDisabled
-        }
-
         switch manager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             return try await requestLocation()
