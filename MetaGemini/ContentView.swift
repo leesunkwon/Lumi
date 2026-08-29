@@ -11,10 +11,13 @@ import UIKit
 struct ContentView: View {
     @Bindable var viewModel: LumiViewModel
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
     @State private var isAnswerIslandExpanded = true
+    @State private var dashboardEntranceStage = 0
+    @State private var hasPlayedDashboardEntrance = false
     @State private var conversationPath: [UUID] = []
     @State private var memoryPendingDeletion: VoiceMemo?
     @State private var memoryEditor: UserMemoryEditor?
@@ -128,17 +131,17 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: SeedSpacing.x6) {
-                    deviceOverview
+                    dashboardEntrance(deviceOverview, stage: 1)
 
                     if let activity = lumiActivity {
-                        activityIsland(activity)
+                        dashboardEntrance(activityIsland(activity), stage: 2)
                     } else if let answer = viewModel.lastAnswer {
-                        answerIsland(answer)
+                        dashboardEntrance(answerIsland(answer), stage: 2)
                     }
 
-                    aiControlCard
+                    dashboardEntrance(aiControlCard, stage: 3)
 
-                    recentMemoriesSection
+                    dashboardEntrance(recentMemoriesSection, stage: 4)
                 }
                 .padding(.horizontal, SeedSpacing.globalGutter)
                 .padding(.top, SeedSpacing.x3)
@@ -147,6 +150,51 @@ struct ContentView: View {
             .scrollIndicators(.hidden)
             .background(SeedColor.layerBasement)
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .onAppear(perform: playDashboardEntranceIfNeeded)
+        .onChange(of: reduceMotion) { _, isEnabled in
+            if isEnabled {
+                dashboardEntranceStage = 4
+            }
+        }
+    }
+
+    private func dashboardEntrance<Content: View>(_ content: Content, stage: Int) -> some View {
+        let isVisible = reduceMotion || dashboardEntranceStage >= stage
+
+        return content
+            .opacity(isVisible ? 1 : 0)
+            .scaleEffect(isVisible ? 1 : 0.985)
+            .offset(y: isVisible ? 0 : SeedSpacing.x4)
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9),
+                value: dashboardEntranceStage
+            )
+    }
+
+    private func playDashboardEntranceIfNeeded() {
+        guard !hasPlayedDashboardEntrance else { return }
+
+        hasPlayedDashboardEntrance = true
+
+        guard !reduceMotion else {
+            dashboardEntranceStage = 4
+            return
+        }
+
+        let stages: [(stage: Int, delay: TimeInterval)] = [
+            (1, 0.04),
+            (2, 0.14),
+            (3, 0.24),
+            (4, 0.34)
+        ]
+
+        for item in stages {
+            DispatchQueue.main.asyncAfter(deadline: .now() + item.delay) {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.9)) {
+                    dashboardEntranceStage = item.stage
+                }
+            }
         }
     }
 
