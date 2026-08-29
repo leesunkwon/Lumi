@@ -72,24 +72,23 @@ struct ContentView: View {
     private var assistantDashboard: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: SeedSpacing.x6) {
                     deviceOverview
-                        .padding(.horizontal, SeedSpacing.globalGutter)
 
-                    LazyVStack(spacing: SeedSpacing.x6) {
-                        if let answer = viewModel.lastAnswer {
-                            answerCard(answer)
-                        }
+                    aiControlCard
 
-                        recentMemoriesSection
+                    if let answer = viewModel.lastAnswer {
+                        answerCard(answer)
                     }
-                    .padding(.horizontal, SeedSpacing.globalGutter)
-                    .padding(.top, SeedSpacing.x6)
-                    .padding(.bottom, SeedSpacing.screenBottom)
+
+                    recentMemoriesSection
                 }
+                .padding(.horizontal, SeedSpacing.globalGutter)
+                .padding(.top, SeedSpacing.x3)
+                .padding(.bottom, SeedSpacing.screenBottom)
             }
             .scrollIndicators(.hidden)
-            .background(SeedColor.layerDefault)
+            .background(SeedColor.layerBasement)
             .toolbar(.hidden, for: .navigationBar)
         }
     }
@@ -181,12 +180,13 @@ struct ContentView: View {
     }
 
     private var deviceOverview: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Lumi")
+                Text("Ray-Ban Meta")
                     .font(.system(size: homeTitleSize, weight: .bold, design: .default))
                     .foregroundStyle(SeedColor.fgNeutral)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
                 Spacer()
 
@@ -194,20 +194,21 @@ struct ContentView: View {
             }
             .padding(.top, SeedSpacing.x2)
 
+            connectionStatus
+                .padding(.top, SeedSpacing.x4)
+
             Image("RayBanMetaGlasses")
                 .resizable()
                 .renderingMode(.original)
                 .interpolation(.high)
                 .scaledToFit()
-                .frame(maxWidth: 260)
-                .offset(y: -18)
-                .frame(height: 128)
+                .frame(maxWidth: 220)
+                .offset(y: -14)
+                .frame(height: 116)
                 .clipped()
-                .padding(.top, SeedSpacing.x2)
+                .padding(.top, SeedSpacing.x7)
+                .frame(maxWidth: .infinity)
                 .accessibilityHidden(true)
-
-            connectionStatus
-                .padding(.top, SeedSpacing.x1)
 
             if shouldShowActivityDetail {
                 Text(voiceActivityDetail)
@@ -215,11 +216,42 @@ struct ContentView: View {
                     .foregroundStyle(viewModel.isRecording ? SeedColor.critical : SeedColor.fgSubtle)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, SeedSpacing.x2)
+                    .padding(.top, SeedSpacing.x1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var connectionStatus: some View {
+        HStack(spacing: SeedSpacing.x1_5) {
+            if viewModel.isRegistering {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(SeedColor.brand)
+            } else {
+                Circle()
+                    .fill(viewModel.isGlassesAvailable ? SeedColor.positive : SeedColor.fgSubtle)
+                    .frame(width: 7, height: 7)
             }
 
+            Text(deviceConnectionTitle)
+                .font(.title3.weight(.regular))
+                .foregroundStyle(SeedColor.fgMuted)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Ray-Ban Meta")
+        .accessibilityValue(deviceConnectionTitle)
+    }
+
+    private var aiControlCard: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x5) {
+            Text("AI 제어")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(SeedColor.fgNeutral)
+
             if viewModel.isGlassesAvailable {
-                HStack(spacing: SeedSpacing.x7) {
+                HStack(spacing: SeedSpacing.x2) {
                     deviceActionButton(
                         symbol: "camera",
                         label: sceneButtonTitle,
@@ -239,8 +271,26 @@ struct ContentView: View {
                         isCritical: viewModel.isRecording,
                         action: performVoiceAction
                     )
+
+                    deviceActionButton(
+                        symbol: "bubble.left.and.bubble.right",
+                        label: "대화 보기",
+                        hint: "현재 대화 세션과 이전 대화를 확인합니다.",
+                        isLoading: false,
+                        isDisabled: false,
+                        action: { selectedTab = .conversations }
+                    )
+
+                    deviceActionButton(
+                        symbol: "bookmark",
+                        label: "기억 보기",
+                        hint: "Lumi가 저장한 메모를 확인합니다.",
+                        isLoading: false,
+                        isDisabled: false,
+                        action: { selectedTab = .memories }
+                    )
                 }
-                .padding(.top, SeedSpacing.x7)
+                .frame(maxWidth: .infinity)
             } else {
                 Button(action: performVoiceAction) {
                     HStack(spacing: SeedSpacing.x2) {
@@ -255,52 +305,12 @@ struct ContentView: View {
                 }
                 .buttonStyle(SeedActionButtonStyle(variant: .neutralSolid))
                 .disabled(viewModel.isRegistering)
-                .padding(.top, SeedSpacing.x10)
                 .accessibilityHint("Meta AI 앱에서 Lumi와 안경의 연결을 시작합니다.")
             }
-
-            if viewModel.isGlassesAvailable {
-                HStack(alignment: .top, spacing: SeedSpacing.x1_5) {
-                    Image(systemName: "lock.fill")
-                        .font(.caption2)
-                        .frame(width: 12, height: 12)
-
-                    Text("장면 사진은 설명 후 저장하지 않아요.")
-                        .font(.caption)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(SeedColor.fgSubtle)
-                .padding(.top, SeedSpacing.x4)
-            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, SeedSpacing.x6)
-    }
-
-    @ViewBuilder
-    private var connectionStatus: some View {
-        HStack(spacing: SeedSpacing.x1_5) {
-            if viewModel.isRegistering {
-                ProgressView()
-                    .controlSize(.mini)
-                    .tint(SeedColor.brand)
-            } else {
-                Circle()
-                    .fill(viewModel.isGlassesAvailable ? SeedColor.positive : SeedColor.fgSubtle)
-                    .frame(width: 7, height: 7)
-            }
-
-            Text("Ray-Ban Meta")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(SeedColor.fgNeutral)
-
-            Text(deviceConnectionTitle)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(SeedColor.fgMuted)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Ray-Ban Meta")
-        .accessibilityValue(deviceConnectionTitle)
+        .padding(SeedSpacing.x5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SeedColor.layerDefault, in: RoundedRectangle(cornerRadius: SeedRadius.r5, style: .continuous))
     }
 
     private func deviceActionButton(
@@ -408,7 +418,7 @@ struct ContentView: View {
     private var recentMemoriesSection: some View {
         VStack(alignment: .leading, spacing: SeedSpacing.x3) {
             HStack(alignment: .bottom) {
-                sectionHeader(title: "최근 기억", detail: "Lumi와 남긴 메모")
+                sectionHeader(title: "최근 메모", detail: "Lumi와 남긴 메모")
                 Spacer()
                 Button("전체 보기") {
                     selectedTab = .memories
@@ -631,8 +641,8 @@ struct ContentView: View {
                 Label("Lumi 소개 다시 보기", systemImage: "rectangle.on.rectangle")
             }
         } label: {
-            Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 19, weight: .semibold))
+            Image(systemName: "slider.vertical.3")
+                .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(SeedColor.fgNeutral)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
