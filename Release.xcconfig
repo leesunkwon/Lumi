@@ -1,0 +1,6 @@
+// Do not ship a Gemini API key in the app. Production must use a token-issuing backend.
+META_APP_ID = 0
+META_CLIENT_TOKEN =
+GEMINI_API_KEY =
+
+#include? "Secrets.xcconfig"

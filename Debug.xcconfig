@@ -1,0 +1,6 @@
+// Local values in Secrets.xcconfig override these safe development defaults.
+META_APP_ID = 0
+META_CLIENT_TOKEN =
+GEMINI_API_KEY =
+
+#include? "Secrets.xcconfig"
