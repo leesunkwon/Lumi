@@ -65,7 +65,7 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: SeedSpacing.x6) {
-                    voiceHero
+                    deviceOverview
 
                     if let answer = viewModel.lastAnswer {
                         answerCard(answer)
@@ -80,16 +80,9 @@ struct ContentView: View {
             }
             .scrollIndicators(.hidden)
             .background(SeedColor.layerBasement)
+            .navigationTitle("Lumi")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: SeedSpacing.x2) {
-                        LumiMark(size: 28)
-                        Text("Lumi")
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(SeedColor.fgNeutral)
-                    }
-                }
-
                 ToolbarItem(placement: .topBarTrailing) {
                     settingsMenu
                 }
@@ -97,35 +90,27 @@ struct ContentView: View {
         }
     }
 
-    private var voiceHero: some View {
-        VStack(alignment: .leading, spacing: SeedSpacing.x5) {
-            HStack(alignment: .center) {
-                SeedStatusBadge(title: heroStatusTitle, tone: heroStatusTone)
-                Spacer()
-                Image(systemName: "eyeglasses")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(heroAccent)
-                    .accessibilityHidden(true)
-            }
+    private var deviceOverview: some View {
+        VStack(spacing: SeedSpacing.x4) {
+            Image("RayBanMetaGlasses")
+                .resizable()
+                .renderingMode(.original)
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(maxWidth: 360)
+                .scaleEffect(1.08)
+                .offset(y: -22)
+                .frame(height: 165)
+                .clipped()
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: SeedSpacing.betweenText) {
-                Text(heroEyebrow)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(heroAccent)
-
-                Text(heroTitle)
-                    .font(SeedTypography.pageTitle)
+            VStack(spacing: SeedSpacing.x1) {
+                Text("Ray-Ban Meta")
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(SeedColor.fgNeutral)
-                    .fixedSize(horizontal: false, vertical: true)
 
-                Text(heroDetail)
-                    .font(SeedTypography.body)
-                    .foregroundStyle(SeedColor.fgMuted)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                connectionStatus
             }
-
-            voiceWaveform
 
             Button(action: performVoiceAction) {
                 HStack(spacing: SeedSpacing.x2) {
@@ -141,48 +126,45 @@ struct ContentView: View {
             }
             .buttonStyle(
                 SeedActionButtonStyle(
-                    variant: viewModel.isRecording ? .criticalSolid : .brandSolid
+                    variant: viewModel.isRecording ? .criticalSolid : .neutralSolid
                 )
             )
             .disabled(isVoiceActionDisabled)
             .accessibilityLabel(voiceButtonTitle)
             .accessibilityHint(voiceButtonAccessibilityHint)
-            .accessibilityValue(heroStatusTitle)
+            .accessibilityValue(deviceConnectionTitle)
+
+            Text(voiceActivityDetail)
+                .font(.footnote)
+                .foregroundStyle(viewModel.isRecording ? SeedColor.critical : SeedColor.fgSubtle)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(SeedSpacing.x5)
-        .background {
-            RoundedRectangle(cornerRadius: SeedRadius.r6, style: .continuous)
-                .fill(SeedColor.magicGradient)
-                .overlay {
-                    if viewModel.isRecording {
-                        RoundedRectangle(cornerRadius: SeedRadius.r6, style: .continuous)
-                            .fill(SeedColor.criticalWeak.opacity(0.92))
-                    }
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: SeedRadius.r6, style: .continuous)
-                .stroke(heroAccent.opacity(0.14), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, SeedSpacing.x2)
+        .padding(.bottom, SeedSpacing.x2)
     }
 
-    private var voiceWaveform: some View {
-        HStack(alignment: .center, spacing: SeedSpacing.x1_5) {
-            ForEach(Array([12, 20, 32, 44, 30, 22, 14].enumerated()), id: \.offset) { index, height in
-                Capsule()
-                    .fill(heroAccent.opacity(index == 3 ? 1 : 0.45))
-                    .frame(width: 5, height: CGFloat(height))
+    @ViewBuilder
+    private var connectionStatus: some View {
+        HStack(spacing: SeedSpacing.x1_5) {
+            if viewModel.isRegistering {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(deviceConnectionColor)
+            } else {
+                Circle()
+                    .fill(deviceConnectionColor)
+                    .frame(width: 8, height: 8)
             }
 
-            Spacer()
-
-            Text(waveformDetail)
-                .font(.caption)
-                .foregroundStyle(SeedColor.fgSubtle)
-                .multilineTextAlignment(.trailing)
+            Text(deviceConnectionTitle)
+                .font(.subheadline.weight(.medium))
         }
-        .frame(minHeight: 44)
-        .accessibilityHidden(true)
+        .foregroundStyle(deviceConnectionColor)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("안경 연결 상태")
+        .accessibilityValue(deviceConnectionTitle)
     }
 
     private func answerCard(_ answer: String) -> some View {
@@ -243,14 +225,14 @@ struct ContentView: View {
 
     private var quickActionsSection: some View {
         VStack(alignment: .leading, spacing: SeedSpacing.x3) {
-            sectionHeader(title: "빠르게 시작", detail: "안경 카메라로 눈앞의 장면을 이해해요")
+            sectionHeader(title: "카메라", detail: "안경으로 지금 보고 있는 장면을 이해해요")
 
-            VStack(alignment: .leading, spacing: SeedSpacing.x4) {
+            Button(action: performSceneAction) {
                 HStack(alignment: .top, spacing: SeedSpacing.x3) {
                     iconTile(symbol: "camera.viewfinder", color: SeedColor.informative)
 
                     VStack(alignment: .leading, spacing: SeedSpacing.x1) {
-                        Text("장면 보기")
+                        Text(sceneButtonTitle)
                             .font(SeedTypography.cardTitle)
                             .foregroundStyle(SeedColor.fgNeutral)
                         Text("사진 한 장을 찍어 메뉴, 문서, 주변 장면을 설명해요.")
@@ -258,36 +240,42 @@ struct ContentView: View {
                             .foregroundStyle(SeedColor.fgMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                }
 
-                Button(action: performSceneAction) {
-                    HStack(spacing: SeedSpacing.x2) {
-                        if viewModel.isCapturingScene {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Image(systemName: viewModel.isGlassesAvailable ? "eye.fill" : "eyeglasses")
-                        }
-                        Text(sceneButtonTitle)
+                    Spacer(minLength: SeedSpacing.x2)
+
+                    if viewModel.isCapturingScene {
+                        ProgressView()
+                            .tint(SeedColor.fgSubtle)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(SeedColor.fgSubtle)
                     }
                 }
-                .buttonStyle(SeedActionButtonStyle(variant: .neutralSolid))
-                .disabled(viewModel.isBusy || viewModel.isRegistering)
-                .accessibilityHint(
-                    viewModel.isGlassesAvailable
-                        ? "안경 카메라로 사진을 촬영해 Gemini에 설명을 요청합니다."
-                        : "Meta AI 앱에서 안경 연결을 시작합니다."
-                )
-
-                SeedCallout(
-                    symbol: "lock.shield",
-                    title: "사진은 한 장만 사용해요",
-                    description: "장면 설명에 필요한 순간만 촬영하고, 사진을 메모에 저장하지 않아요.",
-                    tone: .informative
-                )
+                .padding(SeedSpacing.x4)
+                .contentShape(Rectangle())
             }
-            .padding(SeedSpacing.x4)
-            .seedSurface()
+            .buttonStyle(.plain)
+            .disabled(viewModel.isBusy || viewModel.isRegistering)
+            .seedSurface(radius: SeedRadius.r4)
+            .accessibilityHint(
+                viewModel.isGlassesAvailable
+                    ? "안경 카메라로 사진을 촬영해 Gemini에 설명을 요청합니다."
+                    : "Meta AI 앱에서 안경 연결을 시작합니다."
+            )
+
+            HStack(alignment: .top, spacing: SeedSpacing.x2) {
+                Image(systemName: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(SeedColor.fgSubtle)
+                    .frame(width: 16, height: 16)
+
+                Text("사진은 장면 설명에만 사용하며 기기에 저장하지 않아요.")
+                    .font(.footnote)
+                    .foregroundStyle(SeedColor.fgSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, SeedSpacing.x2)
         }
     }
 
@@ -548,56 +536,27 @@ struct ContentView: View {
         }
     }
 
-    private var heroEyebrow: String {
-        if viewModel.isRecording { return "LUMI가 듣고 있어요" }
-        if viewModel.isSpeaking { return "LUMI가 답하고 있어요" }
-        if viewModel.isProcessing { return "GEMINI와 생각하는 중" }
-        if viewModel.isCapturingScene { return "눈앞의 장면을 보는 중" }
-        if viewModel.isGlassesAvailable { return "보고 묻고, 듣는 개인 비서" }
-        return "RAY-BAN META와 시작하기"
-    }
-
-    private var heroTitle: String {
-        if viewModel.isRecording { return "무엇이든\n말해보세요" }
-        if viewModel.isStartingVoice { return "마이크를\n준비하고 있어요" }
-        if viewModel.isSpeaking { return "답변을\n들려드리고 있어요" }
-        if viewModel.isProcessing { return "답을\n생각하고 있어요" }
-        if viewModel.isCapturingScene { return "장면을\n살펴보고 있어요" }
-        if viewModel.isGlassesAvailable { return "지금 궁금한 걸\n물어보세요" }
-        return "안경과 Lumi를\n연결해볼까요?"
-    }
-
-    private var heroDetail: String {
-        if viewModel.isRecording { return "질문을 마치면 아래 버튼을 한 번 더 눌러 전송하세요." }
-        if viewModel.isStartingVoice { return "안경 마이크로 음성 경로를 연결하고 있어요." }
-        if viewModel.isSpeaking { return "Gemini가 만든 자연스러운 한국어 음성을 안경 스피커로 재생하고 있어요." }
-        if viewModel.isProcessing { return "질문을 이해하고 가장 도움이 되는 답을 준비하고 있어요." }
-        if viewModel.isCapturingScene { return "촬영한 한 장의 사진에서 필요한 정보를 찾고 있어요." }
-        if viewModel.isGlassesAvailable { return "버튼을 누르고 안경에 대고 말하면 답을 귀로 들려드려요." }
-        return "한 번 연결하면 음성 질문과 장면 설명을 바로 사용할 수 있어요."
-    }
-
-    private var heroStatusTitle: String {
-        if viewModel.isRecording { return "듣는 중" }
-        if viewModel.isSpeaking { return "답변 재생 중" }
-        if viewModel.isProcessing || viewModel.isStartingVoice { return "답변 준비 중" }
-        if viewModel.isCapturingScene { return "장면 분석 중" }
-        if viewModel.isGlassesAvailable { return "안경 준비됨" }
+    private var deviceConnectionTitle: String {
         if viewModel.isRegistering { return "연결 중" }
-        return "시작 전"
+        if viewModel.isGlassesAvailable { return "연결됨" }
+        return "연결 필요"
     }
 
-    private var heroStatusTone: SeedStatusBadge.Tone {
-        if viewModel.isRecording { return .critical }
-        if viewModel.isSpeaking { return .positive }
-        if viewModel.isProcessing || viewModel.isStartingVoice || viewModel.isCapturingScene { return .informative }
-        if viewModel.isGlassesAvailable { return .positive }
-        if viewModel.isRegistering { return .warning }
-        return .neutral
+    private var deviceConnectionColor: Color {
+        if viewModel.isRegistering { return SeedColor.brand }
+        if viewModel.isGlassesAvailable { return SeedColor.positive }
+        return SeedColor.fgSubtle
     }
 
-    private var heroAccent: Color {
-        viewModel.isRecording ? SeedColor.critical : SeedColor.brand
+    private var voiceActivityDetail: String {
+        if viewModel.isRecording { return "듣고 있어요. 질문이 끝나면 버튼을 한 번 더 눌러주세요." }
+        if viewModel.isStartingVoice { return "안경 마이크를 준비하고 있어요." }
+        if viewModel.isSpeaking { return "안경 스피커로 답변을 들려드리고 있어요." }
+        if viewModel.isProcessing { return "답변을 준비하고 있어요." }
+        if viewModel.isCapturingScene { return "안경 카메라로 장면을 살펴보고 있어요." }
+        if viewModel.isRegistering { return "Meta AI에서 안경 연결을 마무리해주세요." }
+        if viewModel.isGlassesAvailable { return "버튼을 누르고 안경에 대고 말해보세요." }
+        return "먼저 Ray-Ban Meta를 Lumi에 연결해주세요."
     }
 
     private var voiceButtonTitle: String {
@@ -641,11 +600,6 @@ struct ContentView: View {
         return "안경 연결하고 시작"
     }
 
-    private var waveformDetail: String {
-        if viewModel.isRecording { return "질문이 끝나면 한 번 더 눌러주세요" }
-        if viewModel.isSpeaking { return "따뜻한 Gemini 음성으로 답하고 있어요" }
-        return "안경 마이크로 자연스럽게 말해보세요"
-    }
 }
 
 private enum LumiTab: Hashable {
