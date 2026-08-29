@@ -13,6 +13,7 @@ struct ContentView: View {
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
+    @State private var isAnswerIslandExpanded = true
     @State private var conversationPath: [UUID] = []
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
@@ -42,6 +43,9 @@ struct ContentView: View {
         }
         .onChange(of: viewModel.lastAnswer) {
             hasSavedLatestAnswer = false
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                isAnswerIslandExpanded = true
+            }
         }
     }
 
@@ -75,11 +79,11 @@ struct ContentView: View {
                 LazyVStack(spacing: SeedSpacing.x6) {
                     deviceOverview
 
-                    aiControlCard
-
                     if let answer = viewModel.lastAnswer {
-                        answerCard(answer)
+                        answerIsland(answer)
                     }
+
+                    aiControlCard
 
                     recentMemoriesSection
                 }
@@ -363,60 +367,102 @@ struct ContentView: View {
         .accessibilityValue(deviceConnectionTitle)
     }
 
-    private func answerCard(_ answer: String) -> some View {
-        VStack(alignment: .leading, spacing: SeedSpacing.x4) {
-            HStack(spacing: SeedSpacing.x2_5) {
-                LumiMark(size: 34)
+    private func answerIsland(_ answer: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SeedSpacing.x2) {
+                Button {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                        isAnswerIslandExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: SeedSpacing.x2) {
+                        Image(systemName: viewModel.isSpeaking ? "waveform" : "sparkles")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 20, height: 20)
+                            .foregroundStyle(SeedColor.fgInverted)
 
-                VStack(alignment: .leading, spacing: SeedSpacing.x0_5) {
-                    Text("Lumi의 답변")
-                        .font(SeedTypography.cardTitle)
-                    Text("방금 나눈 대화")
-                        .font(.caption)
-                        .foregroundStyle(SeedColor.fgSubtle)
+                        Text("Lumi")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(SeedColor.fgInverted)
+
+                        if !isAnswerIslandExpanded {
+                            Text("새 답변")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(SeedColor.fgInverted.opacity(0.62))
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isAnswerIslandExpanded ? "Lumi 답변 접기" : "Lumi 답변 펼치기")
 
-                Spacer()
+                Spacer(minLength: SeedSpacing.x2)
 
-                SeedStatusBadge(title: "새 답변", tone: .informative)
+                Button {
+                    selectedTab = .conversations
+                } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(SeedColor.fgInverted)
+                        .frame(width: 32, height: 32)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("전체 대화 보기")
             }
 
-            if let transcript = viewModel.lastTranscript, !transcript.isEmpty {
-                HStack(alignment: .top, spacing: SeedSpacing.x2) {
-                    Image(systemName: "quote.opening")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SeedColor.brand)
-                    Text(transcript)
-                        .font(.subheadline)
-                        .foregroundStyle(SeedColor.fgMuted)
-                }
-                .padding(SeedSpacing.x3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
-            }
+            if isAnswerIslandExpanded {
+                VStack(alignment: .leading, spacing: SeedSpacing.x3) {
+                    if let transcript = viewModel.lastTranscript, !transcript.isEmpty {
+                        Text("“\(transcript)”")
+                            .font(.caption)
+                            .foregroundStyle(SeedColor.fgInverted.opacity(0.58))
+                            .lineLimit(1)
+                    }
 
-            Text(answer)
-                .font(SeedTypography.body)
-                .foregroundStyle(SeedColor.fgNeutral)
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
+                    Text(answer)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(SeedColor.fgInverted)
+                        .lineSpacing(3)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                viewModel.saveLatestAnswerAsMemo()
-                withAnimation(.easeOut(duration: 0.2)) {
-                    hasSavedLatestAnswer = true
+                    HStack {
+                        Text("방금 답했어요")
+                            .font(.caption)
+                            .foregroundStyle(SeedColor.fgInverted.opacity(0.58))
+
+                        Spacer()
+
+                        Button {
+                            viewModel.saveLatestAnswerAsMemo()
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                hasSavedLatestAnswer = true
+                            }
+                        } label: {
+                            Image(systemName: hasSavedLatestAnswer ? "checkmark" : "bookmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(SeedColor.fgInverted)
+                                .frame(width: 32, height: 32)
+                                .background(.white.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(hasSavedLatestAnswer)
+                        .accessibilityLabel(hasSavedLatestAnswer ? "기억에 저장됨" : "답변을 기억에 저장")
+                    }
                 }
-            } label: {
-                Label(
-                    hasSavedLatestAnswer ? "기억에 저장했어요" : "답변을 기억에 저장",
-                    systemImage: hasSavedLatestAnswer ? "checkmark" : "bookmark"
-                )
+                .padding(.top, SeedSpacing.x3)
             }
-            .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
-            .disabled(hasSavedLatestAnswer)
         }
         .padding(SeedSpacing.x4)
-        .seedSurface()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SeedColor.neutralSolid, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 7)
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isAnswerIslandExpanded)
     }
 
     private var recentMemoriesSection: some View {
