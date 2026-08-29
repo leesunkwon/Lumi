@@ -22,7 +22,7 @@ enum WeatherServiceError: LocalizedError {
         case .locationServicesDisabled:
             return "날씨를 확인하려면 iPhone의 위치 서비스를 켜주세요."
         case .locationPermissionDenied:
-            return "현재 위치 날씨를 확인하려면 Lumi의 위치 접근을 허용해주세요."
+            return "현재 위치를 사용하려면 Lumi의 위치 접근을 허용해주세요."
         case .locationUnavailable:
             return "현재 위치를 가져오지 못했어요. 잠시 후 다시 시도해 주세요."
         case .invalidResponse:
@@ -533,7 +533,7 @@ final class WeatherService {
 }
 
 @MainActor
-private final class CurrentLocationProvider: NSObject, CLLocationManagerDelegate {
+final class CurrentLocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocation, Error>?
 

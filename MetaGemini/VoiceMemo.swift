@@ -9,6 +9,7 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
     case general
     case schedule
     case parking
+    case place
 
     var id: String { rawValue }
 
@@ -20,6 +21,8 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
             return "일정"
         case .parking:
             return "주차 기억"
+        case .place:
+            return "장소"
         }
     }
 
@@ -31,6 +34,8 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
             return "calendar"
         case .parking:
             return "parkingsign.circle"
+        case .place:
+            return "mappin.and.ellipse"
         }
     }
 
@@ -69,6 +74,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
     let title: String
     let body: String
     let category: UserMemoryCategory
+    let photoFilename: String?
+    let location: UserMemoryLocation?
     let createdAt: Date
 
     init(
@@ -76,12 +83,16 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         title: String,
         body: String,
         category: UserMemoryCategory = .general,
+        photoFilename: String? = nil,
+        location: UserMemoryLocation? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
         self.title = title
         self.body = body
         self.category = category
+        self.photoFilename = photoFilename
+        self.location = location
         self.createdAt = createdAt
     }
 
@@ -90,6 +101,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         case title
         case body
         case category
+        case photoFilename
+        case location
         case createdAt
     }
 
@@ -101,6 +114,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         category = UserMemoryCategory.resolved(
             from: try container.decodeIfPresent(String.self, forKey: .category)
         )
+        photoFilename = try container.decodeIfPresent(String.self, forKey: .photoFilename)
+        location = try container.decodeIfPresent(UserMemoryLocation.self, forKey: .location)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 
@@ -110,7 +125,23 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         try container.encode(title, forKey: .title)
         try container.encode(body, forKey: .body)
         try container.encode(category, forKey: .category)
+        try container.encodeIfPresent(photoFilename, forKey: .photoFilename)
+        try container.encodeIfPresent(location, forKey: .location)
         try container.encode(createdAt, forKey: .createdAt)
+    }
+}
+
+struct UserMemoryLocation: Codable, Hashable {
+    let latitude: Double
+    let longitude: Double
+    let address: String?
+
+    var displayName: String {
+        address ?? String(format: "위도 %.5f, 경도 %.5f", latitude, longitude)
+    }
+
+    var mapURL: URL? {
+        URL(string: "http://maps.apple.com/?ll=\(latitude),\(longitude)")
     }
 }
 

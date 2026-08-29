@@ -873,12 +873,41 @@ struct ContentView: View {
 
                 Text(memo.category.title)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(SeedColor.fgMuted)
+                    .foregroundStyle(SeedColor.brand)
+                    .padding(.horizontal, SeedSpacing.x1_5)
+                    .padding(.vertical, SeedSpacing.x0_5)
+                    .background(
+                        SeedColor.brandWeak,
+                        in: Capsule(style: .continuous)
+                    )
 
                 Text(memo.body)
                     .font(.subheadline)
                     .foregroundStyle(SeedColor.fgMuted)
                     .lineLimit(3)
+
+                if let photoFilename = memo.photoFilename {
+                    UserMemoryPhotoThumbnail(filename: photoFilename)
+                        .padding(.top, SeedSpacing.x1)
+                }
+
+                if let location = memo.location {
+                    VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                        Label(location.displayName, systemImage: "mappin.and.ellipse")
+                            .font(.caption)
+                            .foregroundStyle(SeedColor.fgMuted)
+                            .lineLimit(2)
+
+                        if let mapURL = location.mapURL {
+                            Link(destination: mapURL) {
+                                Label("지도에서 열기", systemImage: "arrow.up.right.square")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(SeedColor.brand)
+                        }
+                    }
+                    .padding(.top, SeedSpacing.x1)
+                }
 
                 Text(memo.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
@@ -1110,6 +1139,12 @@ private struct UserMemoryEditorView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+
+                    if category == .place {
+                        Label("현재 장소를 저장할 때 사진과 위치가 함께 추가돼요.", systemImage: "mappin.and.ellipse")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle(memory == nil ? "메모리 추가" : "메모리 편집")
@@ -1300,6 +1335,35 @@ private struct ConversationPhotoThumbnail: View {
                 .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
         }
         .accessibilityLabel("안경으로 촬영한 장면 사진")
+    }
+}
+
+private struct UserMemoryPhotoThumbnail: View {
+    let filename: String
+
+    var body: some View {
+        Group {
+            if let image = UserMemoryPhotoStore.image(for: filename) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ContentUnavailableView(
+                    "장소 사진을 불러올 수 없어요",
+                    systemImage: "photo"
+                )
+                .font(.caption)
+                .foregroundStyle(SeedColor.fgSubtle)
+            }
+        }
+        .frame(width: 156, height: 104)
+        .background(SeedColor.layerFill)
+        .clipShape(RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous)
+                .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+        }
+        .accessibilityLabel("저장한 장소 사진")
     }
 }
 

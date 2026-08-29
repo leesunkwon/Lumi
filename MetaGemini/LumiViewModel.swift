@@ -3,6 +3,7 @@
 //  MetaGemini
 //
 
+import CoreLocation
 import Foundation
 import MWDATCore
 import Observation
@@ -71,6 +72,7 @@ final class LumiViewModel {
     @ObservationIgnored private let interactionSounds = InteractionSoundPlayer()
     @ObservationIgnored private let gemini = GeminiService()
     @ObservationIgnored private let weather = WeatherService()
+    @ObservationIgnored private let locationProvider = CurrentLocationProvider()
     @ObservationIgnored private let glassesCamera: GlassesCamera
     @ObservationIgnored private var registrationTask: Task<Void, Never>?
     @ObservationIgnored private var devicesTask: Task<Void, Never>?
@@ -218,7 +220,7 @@ final class LumiViewModel {
         body: String,
         category: UserMemoryCategory
     ) {
-        guard memos.contains(where: { $0.id == id }) else { return }
+        guard let existingMemory = memos.first(where: { $0.id == id }) else { return }
 
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -230,19 +232,26 @@ final class LumiViewModel {
                 id: id,
                 title: normalizedTitle,
                 body: normalizedBody,
-                category: category
+                category: category,
+                photoFilename: existingMemory.photoFilename,
+                location: existingMemory.location,
+                createdAt: existingMemory.createdAt
             )
         )
     }
 
     func deleteUserMemory(id: UUID) {
-        guard memos.contains(where: { $0.id == id }) else { return }
+        guard let memory = memos.first(where: { $0.id == id }) else { return }
+        if let photoFilename = memory.photoFilename {
+            UserMemoryPhotoStore.delete(filename: photoFilename)
+        }
         memos.removeAll { $0.id == id }
         saveUserMemories()
     }
 
     func deleteAllUserMemories() {
         guard !memos.isEmpty else { return }
+        memos.compactMap(\.photoFilename).forEach(UserMemoryPhotoStore.delete)
         memos.removeAll()
         memoSearchQuery = ""
         selectedMemoryCategory = nil
@@ -417,6 +426,35 @@ final class LumiViewModel {
                 fallbackUserMessage: fallbackUserMessage,
                 conversationID: conversationID
             )
+
+        case .savePlace:
+            isProcessing = false
+            isCapturingScene = true
+
+            let photoData = try await glassesCamera.capturePhoto()
+            let location = try await locationProvider.currentLocation()
+            let memoryLocation = await userMemoryLocation(from: location)
+            let placeResult = AssistantResult(
+                transcript: result.transcript,
+                answer: "이곳을 장소 메모리에 저장했어요.",
+                userMemory: UserMemoryDraft(
+                    title: "저장한 장소",
+                    body: memoryLocation.displayName,
+                    category: .place
+                ),
+                shouldSaveUserMemory: true,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                placeResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID,
+                scenePhotoData: photoData,
+                userMemoryPhotoData: photoData,
+                userMemoryLocation: memoryLocation
+            )
         }
     }
 
@@ -424,13 +462,17 @@ final class LumiViewModel {
         _ result: AssistantResult,
         fallbackUserMessage: String,
         conversationID: UUID?,
-        scenePhotoData: Data? = nil
+        scenePhotoData: Data? = nil,
+        userMemoryPhotoData: Data? = nil,
+        userMemoryLocation: UserMemoryLocation? = nil
     ) async throws {
         apply(
             result,
             fallbackUserMessage: fallbackUserMessage,
             conversationID: conversationID,
-            scenePhotoData: scenePhotoData
+            scenePhotoData: scenePhotoData,
+            userMemoryPhotoData: userMemoryPhotoData,
+            userMemoryLocation: userMemoryLocation
         )
         let speech = try await gemini.synthesizeSpeech(result.answer)
         stopWaitingSounds()
@@ -489,7 +531,9 @@ final class LumiViewModel {
         _ result: AssistantResult,
         fallbackUserMessage: String,
         conversationID: UUID?,
-        scenePhotoData: Data? = nil
+        scenePhotoData: Data? = nil,
+        userMemoryPhotoData: Data? = nil,
+        userMemoryLocation: UserMemoryLocation? = nil
     ) {
         let transcript = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let userMessage = (transcript?.isEmpty == false ? transcript : nil) ?? fallbackUserMessage
@@ -509,14 +553,42 @@ final class LumiViewModel {
         let hasExplicitMemoryRequest = hasExplicitUserMemorySaveRequest(in: userMessage)
         if let userMemory = result.userMemory,
            hasExplicitMemoryRequest {
+            let userMemoryPhotoFilename = userMemoryPhotoData.flatMap { try? UserMemoryPhotoStore.save($0) }
             saveUserMemory(
                 VoiceMemo(
                     title: userMemory.title,
                     body: userMemory.body,
-                    category: userMemory.category
+                    category: userMemory.category,
+                    photoFilename: userMemoryPhotoFilename,
+                    location: userMemoryLocation
                 )
             )
         }
+    }
+
+    private func userMemoryLocation(from location: CLLocation) async -> UserMemoryLocation {
+        let placemarks = try? await CLGeocoder().reverseGeocodeLocation(location)
+        let place = placemarks?.first
+        let address = [
+            place?.administrativeArea,
+            place?.locality,
+            place?.subLocality,
+            place?.thoroughfare
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .reduce(into: [String]()) { values, value in
+            if values.last != value {
+                values.append(value)
+            }
+        }
+        .joined(separator: " ")
+
+        return UserMemoryLocation(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            address: address.isEmpty ? nil : address
+        )
     }
 
     private func hasExplicitUserMemorySaveRequest(in text: String) -> Bool {

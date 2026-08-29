@@ -40,6 +40,7 @@ enum AssistantAction: String, Decodable {
     case captureScene = "capture_scene"
     case currentTime = "current_time"
     case weather
+    case savePlace = "save_place"
 }
 
 enum TimeDetail: String, Decodable {
@@ -74,6 +75,7 @@ struct GeminiService {
             - capture_scene: 사용자가 지금 보고 있는 물건, 메뉴, 문서, 사람, 주변 장면처럼 새 사진을 찍어야만 답할 수 있는 내용을 분석해 달라고 요청한 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요.
             - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
             - weather: 사용자가 현재 위치의 날씨, 오늘·내일 날씨, 특정 시간대의 비·눈·기온을 물어본 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. weatherDetail에는 대화 문맥을 반영해 day와 period를 채우세요. 예를 들어 “오늘 날씨 어때”는 today/day, “내일은?”은 tomorrow/day, “오늘 오후에 비 와?”는 today/afternoon, “지금 비 와?”는 today/current입니다. 다른 지역의 날씨는 이 동작을 사용하지 마세요.
+            - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
             - answer: 사진이나 현재 시간이 필요하지 않은 모든 요청입니다. transcript에 전체 질문을 넣고 자연스러운 답을 작성하세요.
 
             단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
@@ -84,9 +86,10 @@ struct GeminiService {
             저장 요청을 받았을 때 shouldSaveUserMemory를 false로 두거나 저장했다고 말로만 답하지 마세요.
             단순히 기억, 메모, 저장이라는 단어를 언급하거나 기억에 관한 질문을 했다는 이유만으로 저장하지 마세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
-            userMemory.category는 반드시 general, schedule, parking 중 하나로 정하세요.
+            userMemory.category는 반드시 general, schedule, parking, place 중 하나로 정하세요.
             - schedule: 약속, 일정, 마감과 사용자가 해야 하는 실행 항목
             - parking: 현재 차량을 주차한 위치나 주차 관련 기억
+            - place: 사용자가 저장하라고 한 현재 장소
             - general: 그 외 개인 선호, 사실, 아이디어
             """,
             audioData: audioData,
@@ -112,7 +115,7 @@ struct GeminiService {
             사용자가 사진 속 정보나 대화 내용을 이 표현들로 저장해 달라고 하면 shouldSaveUserMemory를 반드시 true로 설정하고 userMemory를 채우세요.
             저장했다고 말로만 답하지 마세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
-            userMemory.category는 general, schedule, parking 중 하나여야 합니다. 장면에서 파악한 차량 주차 위치는 parking으로 분류하세요.
+            userMemory.category는 general, schedule, parking, place 중 하나여야 합니다. 장면에서 파악한 차량 주차 위치는 parking으로 분류하세요.
             """,
             audioData: nil,
             imageData: imageData,
@@ -266,8 +269,8 @@ struct GeminiService {
           "transcript": "음성 입력의 한국어 전사. 이미지 전용이면 빈 문자열",
           "answer": "사용자에게 들려줄 한국어 답변",
           "shouldSaveUserMemory": true 또는 false,
-          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약", "category": "general | schedule | parking" } 또는 null,
-          "action": "answer | capture_scene | current_time | weather",
+          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약", "category": "general | schedule | parking | place" } 또는 null,
+          "action": "answer | capture_scene | current_time | weather | save_place",
           "timeDetail": "time | date | date_time 또는 null",
           "weatherDetail": { "day": "today | tomorrow", "period": "current | morning | afternoon | evening | night | day" } 또는 null
         }
