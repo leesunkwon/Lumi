@@ -33,6 +33,30 @@ struct AssistantResult {
     let action: AssistantAction
     let timeDetail: TimeDetail?
     let weatherDetail: WeatherRequest?
+    let scheduleDetail: ScheduleDraft?
+    let timerDetail: TimerDraft?
+
+    init(
+        transcript: String?,
+        answer: String,
+        userMemory: UserMemoryDraft?,
+        shouldSaveUserMemory: Bool,
+        action: AssistantAction,
+        timeDetail: TimeDetail?,
+        weatherDetail: WeatherRequest?,
+        scheduleDetail: ScheduleDraft? = nil,
+        timerDetail: TimerDraft? = nil
+    ) {
+        self.transcript = transcript
+        self.answer = answer
+        self.userMemory = userMemory
+        self.shouldSaveUserMemory = shouldSaveUserMemory
+        self.action = action
+        self.timeDetail = timeDetail
+        self.weatherDetail = weatherDetail
+        self.scheduleDetail = scheduleDetail
+        self.timerDetail = timerDetail
+    }
 }
 
 enum AssistantAction: String, Decodable {
@@ -41,6 +65,8 @@ enum AssistantAction: String, Decodable {
     case currentTime = "current_time"
     case weather
     case savePlace = "save_place"
+    case createSchedule = "create_schedule"
+    case startTimer = "start_timer"
 }
 
 enum TimeDetail: String, Decodable {
@@ -56,6 +82,17 @@ struct SynthesizedSpeech {
     let channelCount: Int
 }
 
+struct ScheduleDraft: Decodable {
+    let title: String
+    let scheduledAt: String
+    let note: String?
+}
+
+struct TimerDraft: Decodable {
+    let title: String
+    let durationSeconds: Int
+}
+
 struct GeminiService {
     private let model = "gemini-3.1-flash-lite"
     private let speechModel = "gemini-3.1-flash-tts-preview"
@@ -64,7 +101,8 @@ struct GeminiService {
     func answerVoiceQuestion(
         audioURL: URL,
         conversation: ConversationSession?,
-        userMemories: [VoiceMemo]
+        userMemories: [VoiceMemo],
+        schedules: [LumiSchedule]
     ) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
         return try await generate(
@@ -76,6 +114,8 @@ struct GeminiService {
             - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
             - weather: 사용자가 현재 위치의 날씨, 오늘·내일 날씨, 특정 시간대의 비·눈·기온을 물어본 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. weatherDetail에는 대화 문맥을 반영해 day와 period를 채우세요. 예를 들어 “오늘 날씨 어때”는 today/day, “내일은?”은 tomorrow/day, “오늘 오후에 비 와?”는 today/afternoon, “지금 비 와?”는 today/current입니다. 다른 지역의 날씨는 이 동작을 사용하지 마세요.
             - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
+            - create_schedule: 사용자가 미래의 특정 시각에 일정·리마인더를 등록해 달라고 명확히 요청한 경우입니다. “내일 3시에 회의 기억해줘”, “금요일 오전 10시에 병원 일정 등록해줘”가 해당합니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. scheduleDetail에 제목과 정확한 로컬 ISO 8601 시각을 채우세요. 현재 시간 문맥을 기준으로 계산하고, 날짜나 시간이 하나라도 모호하면 이 동작을 선택하지 말고 짧게 되물으세요.
+            - start_timer: 사용자가 일정 시각이 아닌 지속 시간 타이머·상대 시간 알림을 요청한 경우입니다. “파스타 8분 타이머”, “30분 뒤 알려줘”, “10초 알람”이 해당합니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timerDetail에 목적 제목과 초 단위 durationSeconds를 채우세요. durationSeconds는 1~604800 범위여야 합니다.
             - answer: 사진이나 현재 시간이 필요하지 않은 모든 요청입니다. transcript에 전체 질문을 넣고 자연스러운 답을 작성하세요.
 
             단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
@@ -96,6 +136,7 @@ struct GeminiService {
             imageData: nil,
             conversation: conversation,
             userMemories: userMemories,
+            schedules: schedules,
             userPrompt: "음성 질문을 전사하고 요청을 처리해 주세요."
         )
     }
@@ -104,7 +145,8 @@ struct GeminiService {
         question: String = "지금 보는 장면을 설명해줘.",
         imageData: Data,
         conversation: ConversationSession?,
-        userMemories: [VoiceMemo]
+        userMemories: [VoiceMemo],
+        schedules: [LumiSchedule]
     ) async throws -> AssistantResult {
         let result = try await generate(
             instruction: """
@@ -121,6 +163,7 @@ struct GeminiService {
             imageData: imageData,
             conversation: conversation,
             userMemories: userMemories,
+            schedules: schedules,
             userPrompt: "사용자 요청: \(question)"
         )
 
@@ -229,11 +272,13 @@ struct GeminiService {
         imageData: Data?,
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
+        schedules: [LumiSchedule],
         userPrompt: String
     ) async throws -> AssistantResult {
         let apiKey = try requireAPIKey()
         let conversationContext = formattedConversationContext(conversation)
         let userMemoryContext = formattedUserMemoryContext(userMemories)
+        let scheduleContext = formattedScheduleContext(schedules)
         let runtimeContext = currentRuntimeContext()
 
         let systemPrompt = """
@@ -259,6 +304,11 @@ struct GeminiService {
         \(userMemoryContext)
         </user_memories>
 
+        아래는 Lumi에 등록된 앞으로의 일정입니다. 일정 시각을 사용자의 새로운 요청과 혼동하지 말고, “내일 일정”, “다음 약속” 같은 질문을 답할 때만 참고하세요.
+        <upcoming_schedules>
+        \(scheduleContext)
+        </upcoming_schedules>
+
         iPhone에서 읽은 현재 시간입니다. 현재 시각·날짜·요일 관련 질문에서만 이 값을 기준으로 삼으세요.
         <runtime_context>
         \(runtimeContext)
@@ -270,9 +320,11 @@ struct GeminiService {
           "answer": "사용자에게 들려줄 한국어 답변",
           "shouldSaveUserMemory": true 또는 false,
           "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약", "category": "general | schedule | parking | place" } 또는 null,
-          "action": "answer | capture_scene | current_time | weather | save_place",
+          "action": "answer | capture_scene | current_time | weather | save_place | create_schedule | start_timer",
           "timeDetail": "time | date | date_time 또는 null",
-          "weatherDetail": { "day": "today | tomorrow", "period": "current | morning | afternoon | evening | night | day" } 또는 null
+          "weatherDetail": { "day": "today | tomorrow", "period": "current | morning | afternoon | evening | night | day" } 또는 null,
+          "scheduleDetail": { "title": "일정 제목", "scheduledAt": "yyyy-MM-dd'T'HH:mm:ssXXX", "note": "선택적인 짧은 메모" } 또는 null,
+          "timerDetail": { "title": "타이머 목적", "durationSeconds": 480 } 또는 null
         }
 
         "기억해줘", "메모해줘", "기록해줘"는 같은 저장 의도입니다. 이 중 하나로 저장을 요청하면 shouldSaveUserMemory는 반드시 true이고 userMemory는 null이 아니어야 합니다.
@@ -343,7 +395,9 @@ struct GeminiService {
                 shouldSaveUserMemory: payload.shouldSaveUserMemory ?? false,
                 action: action,
                 timeDetail: payload.timeDetail,
-                weatherDetail: payload.weatherDetail
+                weatherDetail: payload.weatherDetail,
+                scheduleDetail: payload.scheduleDetail,
+                timerDetail: payload.timerDetail
             )
         }
 
@@ -354,7 +408,9 @@ struct GeminiService {
             shouldSaveUserMemory: false,
             action: .answer,
             timeDetail: nil,
-            weatherDetail: nil
+            weatherDetail: nil,
+            scheduleDetail: nil,
+            timerDetail: nil
         )
     }
 
@@ -411,6 +467,27 @@ struct GeminiService {
                 let title = memory.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 let body = memory.body.trimmingCharacters(in: .whitespacesAndNewlines)
                 return "[기록 시각: \(formatter.string(from: memory.createdAt))] \(title) — \(body)"
+            }
+            .joined(separator: "\n")
+    }
+
+    private func formattedScheduleContext(_ schedules: [LumiSchedule]) -> String {
+        let upcoming = schedules
+            .filter(\.isUpcoming)
+            .sorted { $0.scheduledAt < $1.scheduledAt }
+            .prefix(10)
+
+        guard !upcoming.isEmpty else { return "등록된 앞으로의 일정 없음" }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy년 M월 d일 EEEE a h시 mm분"
+
+        return upcoming
+            .map { schedule in
+                let note = schedule.note.map { " — \($0)" } ?? ""
+                return "[일정 시각: \(formatter.string(from: schedule.scheduledAt))] \(schedule.title)\(note)"
             }
             .joined(separator: "\n")
     }
@@ -548,6 +625,8 @@ private struct AssistantPayload: Decodable {
     let action: AssistantAction?
     let timeDetail: TimeDetail?
     let weatherDetail: WeatherRequest?
+    let scheduleDetail: ScheduleDraft?
+    let timerDetail: TimerDraft?
 }
 
 private extension String {

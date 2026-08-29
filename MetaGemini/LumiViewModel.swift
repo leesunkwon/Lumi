@@ -27,6 +27,8 @@ final class LumiViewModel {
     var selectedMemoryDateFilter: UserMemoryDateFilter = .all
     var selectedMemoryDate = Date.now
     var memos: [VoiceMemo] = []
+    var schedules: [LumiSchedule] = []
+    var timers: [LumiTimer] = []
     var isShowingError = false
     var errorMessage = ""
 
@@ -62,6 +64,18 @@ final class LumiViewModel {
         selectedMemoryDateFilter != .all
     }
 
+    var upcomingSchedules: [LumiSchedule] {
+        schedules
+            .filter(\.isUpcoming)
+            .sorted { $0.scheduledAt < $1.scheduledAt }
+    }
+
+    var activeTimers: [LumiTimer] {
+        timers
+            .filter { $0.isActive() }
+            .sorted { $0.endsAt < $1.endsAt }
+    }
+
     var activeConversationMessages: [ConversationMessage] {
         conversation(for: activeConversationID)?.messages ?? []
     }
@@ -73,15 +87,20 @@ final class LumiViewModel {
     @ObservationIgnored private let gemini = GeminiService()
     @ObservationIgnored private let weather = WeatherService()
     @ObservationIgnored private let locationProvider = CurrentLocationProvider()
+    @ObservationIgnored private let notificationScheduler = LumiNotificationScheduler()
     @ObservationIgnored private let glassesCamera: GlassesCamera
     @ObservationIgnored private var registrationTask: Task<Void, Never>?
     @ObservationIgnored private var devicesTask: Task<Void, Never>?
     @ObservationIgnored private var waitingSoundTask: Task<Void, Never>?
+    @ObservationIgnored private var timerCleanupTask: Task<Void, Never>?
 
     init(wearables: WearablesInterface, configurationError: String? = nil) {
         self.wearables = wearables
         self.glassesCamera = GlassesCamera(wearables: wearables)
         self.memos = Self.loadMemos()
+        self.schedules = Self.loadSchedules()
+        self.timers = Self.loadTimers()
+        self.removeExpiredTimers()
 
         let storedConversations = Self.loadConversations()
         let initialConversation = ConversationSession()
@@ -120,12 +139,28 @@ final class LumiViewModel {
                     : "음성 질문과 장면 보기를 사용할 수 있어요."
             }
         }
+
+        timerCleanupTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    return
+                }
+
+                guard !Task.isCancelled else { return }
+                self?.removeExpiredTimers()
+            }
+        }
     }
 
     deinit {
         registrationTask?.cancel()
         devicesTask?.cancel()
         waitingSoundTask?.cancel()
+        timerCleanupTask?.cancel()
     }
 
     func connectGlasses() {
@@ -168,6 +203,7 @@ final class LumiViewModel {
         let conversationID = activeConversationID
         let conversation = conversation(for: conversationID)
         let userMemories = memos
+        let currentSchedules = upcomingSchedules
 
         Task {
             do {
@@ -176,7 +212,8 @@ final class LumiViewModel {
                     question: "지금 보는 장면을 설명해줘.",
                     imageData: photoData,
                     conversation: conversation,
-                    userMemories: userMemories
+                    userMemories: userMemories,
+                    schedules: currentSchedules
                 )
                 try await deliver(
                     result,
@@ -260,6 +297,33 @@ final class LumiViewModel {
         UserDefaults.standard.removeObject(forKey: Self.memosKey)
     }
 
+    func addSchedule(title: String, scheduledAt: Date, note: String? = nil) {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTitle.isEmpty, scheduledAt > .now else { return }
+
+        Task {
+            _ = await registerSchedule(
+                title: normalizedTitle,
+                scheduledAt: scheduledAt,
+                note: note
+            )
+        }
+    }
+
+    func deleteSchedule(id: UUID) {
+        guard let schedule = schedules.first(where: { $0.id == id }) else { return }
+        schedules.removeAll { $0.id == id }
+        saveSchedules()
+        notificationScheduler.cancel(identifier: schedule.notificationIdentifier)
+    }
+
+    func cancelTimer(id: UUID) {
+        guard let timer = timers.first(where: { $0.id == id }) else { return }
+        timers.removeAll { $0.id == id }
+        saveTimers()
+        notificationScheduler.cancel(identifier: timer.notificationIdentifier)
+    }
+
     @discardableResult
     func startNewConversation() -> UUID {
         let conversation = ConversationSession()
@@ -324,6 +388,7 @@ final class LumiViewModel {
             let conversationID = activeConversationID
             let conversation = conversation(for: conversationID)
             let userMemories = memos
+            let currentSchedules = upcomingSchedules
 
             Task {
                 defer {
@@ -334,13 +399,15 @@ final class LumiViewModel {
                     let intentResult = try await gemini.answerVoiceQuestion(
                         audioURL: audioURL,
                         conversation: conversation,
-                        userMemories: userMemories
+                        userMemories: userMemories,
+                        schedules: currentSchedules
                     )
                     try await handleVoiceIntent(
                         intentResult,
                         conversationID: conversationID,
                         conversation: conversation,
-                        userMemories: userMemories
+                        userMemories: userMemories,
+                        schedules: currentSchedules
                     )
                 } catch {
                     isProcessing = false
@@ -361,7 +428,8 @@ final class LumiViewModel {
         _ result: AssistantResult,
         conversationID: UUID?,
         conversation: ConversationSession?,
-        userMemories: [VoiceMemo]
+        userMemories: [VoiceMemo],
+        schedules: [LumiSchedule]
     ) async throws {
         let userQuestion = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackUserMessage = (userQuestion?.isEmpty == false ? userQuestion : nil) ?? "음성 질문"
@@ -399,7 +467,8 @@ final class LumiViewModel {
                 question: fallbackUserMessage,
                 imageData: photoData,
                 conversation: conversation,
-                userMemories: userMemories
+                userMemories: userMemories,
+                schedules: schedules
             )
             try await deliver(
                 visualResult,
@@ -455,6 +524,95 @@ final class LumiViewModel {
                 userMemoryPhotoData: photoData,
                 userMemoryLocation: memoryLocation
             )
+
+        case .createSchedule:
+            guard let draft = result.scheduleDetail,
+                  let scheduledAt = scheduleDate(from: draft),
+                  scheduledAt > .now,
+                  !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                let clarificationResult = AssistantResult(
+                    transcript: result.transcript,
+                    answer: "일정을 등록할 날짜와 시간을 다시 알려주세요.",
+                    userMemory: nil,
+                    shouldSaveUserMemory: false,
+                    action: .answer,
+                    timeDetail: nil,
+                    weatherDetail: nil
+                )
+                try await deliver(
+                    clarificationResult,
+                    fallbackUserMessage: fallbackUserMessage,
+                    conversationID: conversationID
+                )
+                return
+            }
+
+            let notificationScheduled = await registerSchedule(
+                title: draft.title,
+                scheduledAt: scheduledAt,
+                note: draft.note
+            )
+            let notificationAnswer = notificationScheduled
+                ? "알림도 설정했어요."
+                : "일정은 등록했어요. 알림을 받으려면 iPhone 설정에서 Lumi 알림을 허용해 주세요."
+            let scheduleResult = AssistantResult(
+                transcript: result.transcript,
+                answer: "\(scheduleDateDescription(scheduledAt))에 \(draft.title) 일정을 등록했고, \(notificationAnswer)",
+                userMemory: result.userMemory,
+                shouldSaveUserMemory: result.shouldSaveUserMemory,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                scheduleResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
+
+        case .startTimer:
+            guard let draft = result.timerDetail,
+                  (1...604_800).contains(draft.durationSeconds)
+            else {
+                let clarificationResult = AssistantResult(
+                    transcript: result.transcript,
+                    answer: "타이머 시간을 다시 알려주세요. 예를 들어 8분 타이머처럼 말해 주세요.",
+                    userMemory: nil,
+                    shouldSaveUserMemory: false,
+                    action: .answer,
+                    timeDetail: nil,
+                    weatherDetail: nil
+                )
+                try await deliver(
+                    clarificationResult,
+                    fallbackUserMessage: fallbackUserMessage,
+                    conversationID: conversationID
+                )
+                return
+            }
+
+            let notificationScheduled = await registerTimer(
+                title: draft.title,
+                durationSeconds: draft.durationSeconds
+            )
+            let notificationAnswer = notificationScheduled
+                ? "끝나면 알려드릴게요."
+                : "타이머는 시작했어요. 알림을 받으려면 iPhone 설정에서 Lumi 알림을 허용해 주세요."
+            let timerResult = AssistantResult(
+                transcript: result.transcript,
+                answer: "\(timerDurationDescription(draft.durationSeconds)) \(draft.title) 타이머를 시작했어요. \(notificationAnswer)",
+                userMemory: nil,
+                shouldSaveUserMemory: false,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                timerResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
         }
     }
 
@@ -497,6 +655,63 @@ final class LumiViewModel {
             formatter.dateFormat = "M월 d일 EEEE a h시 mm분"
             return "지금은 \(formatter.string(from: .now))이에요."
         }
+    }
+
+    private func registerSchedule(
+        title: String,
+        scheduledAt: Date,
+        note: String?
+    ) async -> Bool {
+        let schedule = LumiSchedule(title: title, scheduledAt: scheduledAt, note: note)
+        schedules.append(schedule)
+        schedules.sort { $0.scheduledAt < $1.scheduledAt }
+        saveSchedules()
+        return await notificationScheduler.scheduleReminder(for: schedule)
+    }
+
+    private func registerTimer(title: String, durationSeconds: Int) async -> Bool {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timer = LumiTimer(
+            title: normalizedTitle.isEmpty ? "타이머" : normalizedTitle,
+            endsAt: .now.addingTimeInterval(TimeInterval(durationSeconds))
+        )
+        timers.append(timer)
+        timers.sort { $0.endsAt < $1.endsAt }
+        saveTimers()
+        return await notificationScheduler.scheduleCompletion(for: timer)
+    }
+
+    private func scheduleDate(from draft: ScheduleDraft) -> Date? {
+        let formatters: [ISO8601DateFormatter] = [
+            ISO8601DateFormatter(),
+            {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                return formatter
+            }()
+        ]
+
+        return formatters.compactMap { $0.date(from: draft.scheduledAt) }.first
+    }
+
+    private func scheduleDateDescription(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+        formatter.dateFormat = "M월 d일 EEEE a h시 mm분"
+        return formatter.string(from: date)
+    }
+
+    private func timerDurationDescription(_ durationSeconds: Int) -> String {
+        let hours = durationSeconds / 3_600
+        let minutes = (durationSeconds % 3_600) / 60
+        let seconds = durationSeconds % 60
+
+        if hours > 0, minutes > 0 { return "\(hours)시간 \(minutes)분" }
+        if hours > 0 { return "\(hours)시간" }
+        if minutes > 0, seconds > 0 { return "\(minutes)분 \(seconds)초" }
+        if minutes > 0 { return "\(minutes)분" }
+        return "\(seconds)초"
     }
 
     private func playSpeech(_ speech: SynthesizedSpeech) async throws {
@@ -718,12 +933,21 @@ final class LumiViewModel {
         UserDefaults.standard.set(data, forKey: Self.memosKey)
     }
 
+    private func removeExpiredTimers(referenceDate: Date = .now) {
+        let active = timers.filter { $0.isActive(at: referenceDate) }
+        guard active.count != timers.count else { return }
+        timers = active
+        saveTimers()
+    }
+
     private func show(_ error: Error) {
         errorMessage = error.localizedDescription
         isShowingError = true
     }
 
     private static let memosKey = "lumi.voice-memos"
+    private static let schedulesKey = "lumi.schedules"
+    private static let timersKey = "lumi.timers"
     private static let conversationsKey = "lumi.conversations"
     private static let activeConversationKey = "lumi.active-conversation-id"
 
@@ -735,6 +959,36 @@ final class LumiViewModel {
         }
 
         return memos.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func saveSchedules() {
+        guard let data = try? JSONEncoder().encode(schedules) else { return }
+        UserDefaults.standard.set(data, forKey: Self.schedulesKey)
+    }
+
+    private static func loadSchedules() -> [LumiSchedule] {
+        guard let data = UserDefaults.standard.data(forKey: schedulesKey),
+              let schedules = try? JSONDecoder().decode([LumiSchedule].self, from: data)
+        else {
+            return []
+        }
+
+        return schedules.sorted { $0.scheduledAt < $1.scheduledAt }
+    }
+
+    private func saveTimers() {
+        guard let data = try? JSONEncoder().encode(timers) else { return }
+        UserDefaults.standard.set(data, forKey: Self.timersKey)
+    }
+
+    private static func loadTimers() -> [LumiTimer] {
+        guard let data = UserDefaults.standard.data(forKey: timersKey),
+              let timers = try? JSONDecoder().decode([LumiTimer].self, from: data)
+        else {
+            return []
+        }
+
+        return timers.sorted { $0.endsAt < $1.endsAt }
     }
 
     private func saveConversations() {

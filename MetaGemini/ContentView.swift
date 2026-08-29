@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var memoryPendingDeletion: VoiceMemo?
     @State private var memoryEditor: UserMemoryEditor?
     @State private var isShowingClearAllMemoriesConfirmation = false
+    @State private var isShowingScheduleEditor = false
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
     var body: some View {
@@ -95,6 +96,11 @@ struct ContentView: View {
                 }
             }
         }
+        .sheet(isPresented: $isShowingScheduleEditor) {
+            ScheduleEditorView { title, scheduledAt, note in
+                viewModel.addSchedule(title: title, scheduledAt: scheduledAt, note: note)
+            }
+        }
         .onChange(of: viewModel.lastAnswer) {
             hasSavedLatestAnswer = false
             withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
@@ -116,6 +122,12 @@ struct ContentView: View {
                     Label("대화", systemImage: "bubble.left.and.bubble.right")
                 }
                 .tag(LumiTab.conversations)
+
+            schedulesScreen
+                .tabItem {
+                    Label("일정", systemImage: "calendar")
+                }
+                .tag(LumiTab.schedules)
 
             memoriesScreen
                 .tabItem {
@@ -139,9 +151,17 @@ struct ContentView: View {
                         dashboardEntrance(answerIsland(answer), stage: 2)
                     }
 
-                    dashboardEntrance(aiControlCard, stage: 3)
+                    if !viewModel.activeTimers.isEmpty {
+                        dashboardEntrance(activeTimersSection, stage: 3)
+                    }
 
-                    dashboardEntrance(recentMemoriesSection, stage: 4)
+                    dashboardEntrance(aiControlCard, stage: 4)
+
+                    if !viewModel.upcomingSchedules.isEmpty {
+                        dashboardEntrance(upcomingSchedulesSection, stage: 5)
+                    }
+
+                    dashboardEntrance(recentMemoriesSection, stage: 6)
                 }
                 .padding(.horizontal, SeedSpacing.globalGutter)
                 .padding(.top, SeedSpacing.x3)
@@ -154,7 +174,7 @@ struct ContentView: View {
         .onAppear(perform: playDashboardEntranceIfNeeded)
         .onChange(of: reduceMotion) { _, isEnabled in
             if isEnabled {
-                dashboardEntranceStage = 4
+                dashboardEntranceStage = 6
             }
         }
     }
@@ -178,7 +198,7 @@ struct ContentView: View {
         hasPlayedDashboardEntrance = true
 
         guard !reduceMotion else {
-            dashboardEntranceStage = 4
+            dashboardEntranceStage = 6
             return
         }
 
@@ -186,7 +206,9 @@ struct ContentView: View {
             (1, 0.04),
             (2, 0.14),
             (3, 0.24),
-            (4, 0.34)
+            (4, 0.34),
+            (5, 0.44),
+            (6, 0.54)
         ]
 
         for item in stages {
@@ -235,6 +257,113 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var schedulesScreen: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: SeedSpacing.x4) {
+                    if viewModel.upcomingSchedules.isEmpty {
+                        ContentUnavailableView(
+                            "등록한 일정이 없어요",
+                            systemImage: "calendar",
+                            description: Text("“내일 3시에 회의 기억해줘”라고 말하면 알림과 함께 등록해드려요.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, SeedSpacing.x16)
+                    } else {
+                        Text("다가오는 일정")
+                            .font(SeedTypography.sectionTitle)
+                            .foregroundStyle(SeedColor.fgNeutral)
+
+                        VStack(spacing: 0) {
+                            ForEach(Array(viewModel.upcomingSchedules.enumerated()), id: \.element.id) { index, schedule in
+                                scheduleRow(schedule, showsDelete: true)
+
+                                if index < viewModel.upcomingSchedules.count - 1 {
+                                    Divider()
+                                        .padding(.leading, SeedSpacing.x12)
+                                }
+                            }
+                        }
+                        .seedSurface(radius: SeedRadius.r4)
+                    }
+                }
+                .padding(.horizontal, SeedSpacing.globalGutter)
+                .padding(.top, SeedSpacing.x3)
+                .padding(.bottom, SeedSpacing.screenBottom)
+            }
+            .scrollIndicators(.hidden)
+            .background(SeedColor.layerBasement)
+            .navigationTitle("일정")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isShowingScheduleEditor = true
+                    } label: {
+                        Label("일정 추가", systemImage: "plus")
+                    }
+                    .accessibilityHint("직접 입력으로 새 일정을 추가합니다.")
+                }
+            }
+        }
+    }
+
+    private func scheduleRow(_ schedule: LumiSchedule, showsDelete: Bool) -> some View {
+        HStack(alignment: .center, spacing: SeedSpacing.x3) {
+            VStack(spacing: SeedSpacing.x0_5) {
+                Text(schedule.scheduledAt.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(SeedColor.fgMuted)
+
+                Text(schedule.scheduledAt.formatted(.dateTime.hour().minute()))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(SeedColor.fgNeutral)
+                    .monospacedDigit()
+            }
+            .frame(width: 52)
+            .padding(.vertical, SeedSpacing.x1)
+            .background(SeedColor.brandWeak, in: RoundedRectangle(cornerRadius: SeedRadius.r2_5, style: .continuous))
+
+            VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                Text(schedule.title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(SeedColor.fgNeutral)
+                    .lineLimit(1)
+
+                Text(schedule.scheduledAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(SeedColor.fgSubtle)
+
+                if let note = schedule.note, !note.isEmpty {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(SeedColor.fgMuted)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: SeedSpacing.x2)
+
+            if showsDelete {
+                Menu {
+                    Button("일정 삭제", role: .destructive) {
+                        viewModel.deleteSchedule(id: schedule.id)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(SeedColor.fgSubtle)
+                        .frame(width: 36, height: 36)
+                }
+                .accessibilityLabel("\(schedule.title) 일정 메뉴")
+            }
+        }
+        .padding(SeedSpacing.x4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(schedule.title), \(schedule.scheduledAt.formatted(date: .abbreviated, time: .shortened))")
     }
 
     private func conversationRow(_ conversation: ConversationSession) -> some View {
@@ -593,6 +722,110 @@ struct ContentView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(activity.accessibilityLabel)
+    }
+
+    private var activeTimersSection: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x3) {
+            sectionHeader(title: "실행 중인 타이머", detail: "시간이 되면 iPhone 알림으로 알려드려요")
+
+            VStack(spacing: SeedSpacing.x2) {
+                ForEach(viewModel.activeTimers) { timer in
+                    activeTimerCard(timer)
+                }
+            }
+        }
+    }
+
+    private func activeTimerCard(_ timer: LumiTimer) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remaining = timer.remainingSeconds(at: context.date)
+
+            HStack(spacing: SeedSpacing.x3) {
+                Image(systemName: "timer")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(SeedColor.fgInverted)
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                    Text(timer.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(SeedColor.fgInverted)
+                        .lineLimit(1)
+
+                    Text("남은 시간")
+                        .font(.caption)
+                        .foregroundStyle(SeedColor.fgInverted.opacity(0.62))
+                }
+
+                Spacer(minLength: SeedSpacing.x2)
+
+                Text(timerCountdown(remaining))
+                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(SeedColor.fgInverted)
+                    .contentTransition(.numericText())
+
+                Button {
+                    viewModel.cancelTimer(id: timer.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SeedColor.fgInverted.opacity(0.76))
+                        .frame(width: 32, height: 32)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(timer.title) 타이머 취소")
+            }
+            .padding(SeedSpacing.x4)
+            .frame(maxWidth: .infinity)
+            .background(SeedColor.neutralSolid, in: RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
+                    .stroke(.white.opacity(0.1), lineWidth: 0.5)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(timer.title) 타이머, 남은 시간 \(timerCountdown(remaining))")
+        }
+    }
+
+    private func timerCountdown(_ seconds: Int) -> String {
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remainingSeconds = seconds % 60
+
+        if hours > 0 {
+            return String(format: "%02d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
+    }
+
+    private var upcomingSchedulesSection: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x3) {
+            HStack(alignment: .bottom) {
+                sectionHeader(title: "다가오는 일정", detail: "Lumi가 설정한 리마인더")
+                Spacer()
+                Button("전체 보기") {
+                    selectedTab = .schedules
+                }
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(SeedColor.brand)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(viewModel.upcomingSchedules.prefix(2).enumerated()), id: \.element.id) { index, schedule in
+                    scheduleRow(schedule, showsDelete: false)
+
+                    if index < min(viewModel.upcomingSchedules.count, 2) - 1 {
+                        Divider()
+                            .padding(.leading, SeedSpacing.x12)
+                    }
+                }
+            }
+            .seedSurface(radius: SeedRadius.r4)
+        }
     }
 
     private var recentMemoriesSection: some View {
@@ -1138,6 +1371,61 @@ private struct UserMemoryEditor: Identifiable {
     }
 }
 
+private struct ScheduleEditorView: View {
+    let onSave: (String, Date, String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var scheduledAt = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now
+    @State private var note = ""
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && scheduledAt > .now
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("일정") {
+                    TextField("예: 팀 회의", text: $title)
+                    DatePicker("알림 시각", selection: $scheduledAt, in: Date.now..., displayedComponents: [.date, .hourAndMinute])
+                }
+
+                Section("메모") {
+                    TextEditor(text: $note)
+                        .frame(minHeight: 96)
+                        .accessibilityLabel("일정 메모")
+                }
+
+                Section {
+                    Label("저장하면 지정한 시각에 iPhone 알림을 보내드려요.", systemImage: "bell")
+                        .font(.footnote)
+                        .foregroundStyle(SeedColor.fgMuted)
+                }
+            }
+            .navigationTitle("일정 추가")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("저장") {
+                        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onSave(title, scheduledAt, trimmedNote.isEmpty ? nil : trimmedNote)
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+}
+
 private struct UserMemoryEditorView: View {
     let memory: VoiceMemo?
     let onSave: (String, String, UserMemoryCategory) -> Void
@@ -1550,6 +1838,7 @@ private struct LumiActivityIndicator: View {
 private enum LumiTab: Hashable {
     case assistant
     case conversations
+    case schedules
     case memories
 }
 
