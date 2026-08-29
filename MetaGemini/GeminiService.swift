@@ -29,7 +29,7 @@ struct AssistantResult {
 }
 
 struct GeminiService {
-    private let model = "gemini-2.5-flash"
+    private let model = "gemini-3.6-flash"
 
     func answerVoiceQuestion(audioURL: URL) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
