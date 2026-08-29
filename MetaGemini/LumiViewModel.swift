@@ -76,6 +76,9 @@ final class LumiViewModel {
             guard let self else { return }
             for await devices in wearables.devicesStream() {
                 self.isGlassesAvailable = !devices.isEmpty
+                if !devices.isEmpty {
+                    self.isRegistering = false
+                }
                 self.glassesStatusDetail = devices.isEmpty
                     ? "안경을 착용하고 Bluetooth 연결을 확인해주세요."
                     : "음성 질문과 장면 보기를 사용할 수 있어요."
@@ -93,10 +96,10 @@ final class LumiViewModel {
         isRegistering = true
 
         Task {
-            defer { isRegistering = false }
             do {
                 try await wearables.startRegistration()
             } catch {
+                isRegistering = false
                 show(error)
             }
         }
@@ -107,6 +110,7 @@ final class LumiViewModel {
             do {
                 _ = try await wearables.handleUrl(url)
             } catch {
+                isRegistering = false
                 show(error)
             }
         }
@@ -149,7 +153,7 @@ final class LumiViewModel {
     }
 
     private func startVoiceQuestion() {
-        guard !isBusy else { return }
+        guard !isBusy, isGlassesAvailable else { return }
         isStartingVoice = true
 
         Task {
@@ -201,14 +205,19 @@ final class LumiViewModel {
     private func updateRegistrationState(_ state: RegistrationState) {
         switch state {
         case .registered:
+            isRegistering = false
             glassesStatusDetail = "등록되었습니다. 안경을 착용해 연결을 시작하세요."
         case .registering:
+            isRegistering = true
             glassesStatusDetail = "Meta AI에서 Lumi 연결을 승인하는 중입니다."
         case .available:
+            isRegistering = false
             glassesStatusDetail = "Meta AI에서 Lumi를 등록해주세요."
         case .unavailable:
+            isRegistering = false
             glassesStatusDetail = "Meta AI 앱과 안경 연결 상태를 확인해주세요."
         @unknown default:
+            isRegistering = false
             glassesStatusDetail = "안경 상태를 확인하는 중입니다."
         }
     }
