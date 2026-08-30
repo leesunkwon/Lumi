@@ -81,6 +81,12 @@ final class LumiViewModel {
         selectedMemoryDateFilter != .all
     }
 
+    var hasActiveMemoryFilters: Bool {
+        !memoSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || selectedMemoryCategory != nil
+            || hasActiveMemoryDateFilter
+    }
+
     var upcomingSchedules: [LumiSchedule] {
         schedules
             .filter(\.isUpcoming)

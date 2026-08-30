@@ -178,6 +178,11 @@ struct ContentView: View {
                 isAnswerIslandExpanded = true
             }
         }
+        .onChange(of: selectedTab) { _, tab in
+            if tab == .memories {
+                viewModel.clearMemoryFilters()
+            }
+        }
     }
 
     private var appTabs: some View {
@@ -1038,6 +1043,13 @@ struct ContentView: View {
                     .padding(.bottom, SeedSpacing.x3)
                     .background(SeedColor.layerDefault)
 
+                if viewModel.hasActiveMemoryFilters {
+                    memoryFilterResetControl
+                        .padding(.horizontal, SeedSpacing.globalGutter)
+                        .padding(.bottom, SeedSpacing.x3)
+                        .background(SeedColor.layerDefault)
+                }
+
                 if viewModel.selectedMemoryDateFilter == .custom {
                     memoryDatePicker
                         .padding(.horizontal, SeedSpacing.globalGutter)
@@ -1174,6 +1186,27 @@ struct ContentView: View {
         }
         .scrollIndicators(.hidden)
         .accessibilityLabel("사용자 메모리 날짜 필터")
+    }
+
+    private var memoryFilterResetControl: some View {
+        HStack(spacing: SeedSpacing.x2) {
+            Label("필터 적용 중", systemImage: "line.3.horizontal.decrease.circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(SeedColor.fgMuted)
+
+            Spacer()
+
+            Button("필터 지우기") {
+                viewModel.clearMemoryFilters()
+            }
+            .font(.caption.weight(.bold))
+            .foregroundStyle(SeedColor.brand)
+        }
+        .padding(.horizontal, SeedSpacing.x3)
+        .frame(minHeight: 36)
+        .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("검색어, 카테고리, 날짜 필터를 모두 지웁니다.")
     }
 
     private func memoryDateFilterButton(_ filter: UserMemoryDateFilter) -> some View {
