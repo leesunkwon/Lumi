@@ -70,6 +70,8 @@
     <string>Lumi가 현재 위치 기준의 기상청 날씨를 알려주기 위해 위치를 사용합니다.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Lumi가 안경 마이크로 질문을 듣고 개인 메모를 만들기 위해 마이크를 사용합니다.</string>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>

@@ -38,19 +38,25 @@ struct LumiSchedule: Codable, Identifiable, Hashable {
 struct LumiTimer: Codable, Identifiable, Hashable {
     let id: UUID
     let title: String
-    let startedAt: Date
-    let endsAt: Date
+    var startedAt: Date
+    var endsAt: Date
+    var pausedAt: Date?
+    var pausedRemainingSeconds: Int?
 
     init(
         id: UUID = UUID(),
         title: String,
         startedAt: Date = .now,
-        endsAt: Date
+        endsAt: Date,
+        pausedAt: Date? = nil,
+        pausedRemainingSeconds: Int? = nil
     ) {
         self.id = id
         self.title = title
         self.startedAt = startedAt
         self.endsAt = endsAt
+        self.pausedAt = pausedAt
+        self.pausedRemainingSeconds = pausedRemainingSeconds
     }
 
     var notificationIdentifier: String {
@@ -58,14 +64,24 @@ struct LumiTimer: Codable, Identifiable, Hashable {
     }
 
     func remainingSeconds(at date: Date = .now) -> Int {
-        max(0, Int(ceil(endsAt.timeIntervalSince(date))))
+        if let pausedRemainingSeconds {
+            return pausedRemainingSeconds
+        }
+        return max(0, Int(ceil(endsAt.timeIntervalSince(date))))
     }
 
     func isActive(at date: Date = .now) -> Bool {
-        endsAt > date
+        isPaused || endsAt > date
+    }
+
+    var isPaused: Bool {
+        pausedRemainingSeconds != nil
     }
 
     func progress(at date: Date = .now) -> Double {
+        if isPaused {
+            return 0
+        }
         let total = endsAt.timeIntervalSince(startedAt)
         guard total > 0 else { return 1 }
         return min(1, max(0, date.timeIntervalSince(startedAt) / total))

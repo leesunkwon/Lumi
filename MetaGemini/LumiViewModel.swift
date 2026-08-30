@@ -29,6 +29,7 @@ final class LumiViewModel {
     var memos: [VoiceMemo] = []
     var schedules: [LumiSchedule] = []
     var timers: [LumiTimer] = []
+    var pendingAction: PendingLumiAction?
     var isShowingError = false
     var errorMessage = ""
 
@@ -43,7 +44,7 @@ final class LumiViewModel {
     }
 
     var isBusy: Bool {
-        isStartingVoice || isRecording || isProcessing || isCapturingScene || isSpeaking
+        isStartingVoice || isRecording || isProcessing || isCapturingScene || isSpeaking || pendingAction != nil
     }
 
     var filteredMemos: [VoiceMemo] {
@@ -101,6 +102,12 @@ final class LumiViewModel {
         self.schedules = Self.loadSchedules()
         self.timers = Self.loadTimers()
         self.removeExpiredTimers()
+
+        Task {
+            for timer in self.activeTimers {
+                await LumiTimerLiveActivityManager.startOrUpdate(for: timer)
+            }
+        }
 
         let storedConversations = Self.loadConversations()
         let initialConversation = ConversationSession()
@@ -322,6 +329,143 @@ final class LumiViewModel {
         timers.removeAll { $0.id == id }
         saveTimers()
         notificationScheduler.cancel(identifier: timer.notificationIdentifier)
+        Task {
+            await LumiTimerLiveActivityManager.end(timerID: timer.id)
+        }
+    }
+
+    func pauseTimer(id: UUID) {
+        guard let index = timers.firstIndex(where: { $0.id == id }),
+              !timers[index].isPaused
+        else {
+            return
+        }
+
+        let remainingSeconds = timers[index].remainingSeconds()
+        guard remainingSeconds > 0 else {
+            cancelTimer(id: id)
+            return
+        }
+
+        timers[index].pausedAt = .now
+        timers[index].pausedRemainingSeconds = remainingSeconds
+        let timer = timers[index]
+        saveTimers()
+        notificationScheduler.cancel(identifier: timer.notificationIdentifier)
+
+        Task {
+            await LumiTimerLiveActivityManager.startOrUpdate(for: timer)
+        }
+    }
+
+    func resumeTimer(id: UUID) {
+        guard let index = timers.firstIndex(where: { $0.id == id }),
+              let remainingSeconds = timers[index].pausedRemainingSeconds,
+              remainingSeconds > 0
+        else {
+            return
+        }
+
+        timers[index].startedAt = .now
+        timers[index].endsAt = .now.addingTimeInterval(TimeInterval(remainingSeconds))
+        timers[index].pausedAt = nil
+        timers[index].pausedRemainingSeconds = nil
+        let timer = timers[index]
+        saveTimers()
+
+        Task {
+            _ = await notificationScheduler.scheduleCompletion(for: timer)
+            await LumiTimerLiveActivityManager.startOrUpdate(for: timer)
+        }
+    }
+
+    func handleLumiURL(_ url: URL) -> Bool {
+        guard url.scheme == "lumi", url.host == "timer",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let action = components.queryItems?.first(where: { $0.name == "action" })?.value,
+              let timerIDString = components.queryItems?.first(where: { $0.name == "id" })?.value,
+              let timerID = UUID(uuidString: timerIDString)
+        else {
+            return false
+        }
+
+        switch action {
+        case "pause":
+            pauseTimer(id: timerID)
+        case "resume":
+            resumeTimer(id: timerID)
+        case "cancel":
+            cancelTimer(id: timerID)
+        case "open":
+            break
+        default:
+            return false
+        }
+
+        return true
+    }
+
+    func confirmPendingAction() {
+        guard let pendingAction else { return }
+        self.pendingAction = nil
+        isProcessing = true
+        startWaitingSounds()
+
+        Task {
+            do {
+                try await handleVoiceIntent(
+                    pendingAction.result,
+                    conversationID: pendingAction.conversationID,
+                    conversation: pendingAction.conversation,
+                    userMemories: pendingAction.userMemories,
+                    schedules: pendingAction.schedules,
+                    bypassingActionConfirmation: true
+                )
+            } catch {
+                isProcessing = false
+                isCapturingScene = false
+                isSpeaking = false
+                stopWaitingSounds()
+                show(error)
+            }
+        }
+    }
+
+    func cancelPendingAction() {
+        guard let pendingAction else { return }
+        self.pendingAction = nil
+
+        let cancelledResult = AssistantResult(
+            transcript: pendingAction.result.transcript,
+            answer: "알겠어요. \(pendingAction.kind.cancellationAnswer)",
+            userMemory: nil,
+            shouldSaveUserMemory: false,
+            action: .answer,
+            timeDetail: nil,
+            weatherDetail: nil
+        )
+
+        isProcessing = true
+        startWaitingSounds()
+        Task {
+            do {
+                try await deliver(
+                    cancelledResult,
+                    fallbackUserMessage: pendingAction.fallbackUserMessage,
+                    conversationID: pendingAction.conversationID
+                )
+            } catch {
+                isProcessing = false
+                isCapturingScene = false
+                isSpeaking = false
+                stopWaitingSounds()
+                show(error)
+            }
+        }
+    }
+
+    func discardPendingAction() {
+        pendingAction = nil
     }
 
     @discardableResult
@@ -429,10 +573,29 @@ final class LumiViewModel {
         conversationID: UUID?,
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
-        schedules: [LumiSchedule]
+        schedules: [LumiSchedule],
+        bypassingActionConfirmation: Bool = false
     ) async throws {
         let userQuestion = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackUserMessage = (userQuestion?.isEmpty == false ? userQuestion : nil) ?? "음성 질문"
+
+        if !bypassingActionConfirmation,
+           LumiPreferences.confirmsActionsBeforeExecution,
+           let kind = actionConfirmationKind(for: result, userMessage: fallbackUserMessage) {
+            pendingAction = PendingLumiAction(
+                kind: kind,
+                result: result,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID,
+                conversation: conversation,
+                userMemories: userMemories,
+                schedules: schedules
+            )
+            isProcessing = false
+            isCapturingScene = false
+            stopWaitingSounds()
+            return
+        }
 
         switch result.action {
         case .answer:
@@ -451,7 +614,8 @@ final class LumiViewModel {
                     conversationID: conversationID,
                     conversation: conversation,
                     userMemories: userMemories,
-                    schedules: schedules
+                    schedules: schedules,
+                    bypassingActionConfirmation: bypassingActionConfirmation
                 )
             } else if let fallbackSchedule = relativeScheduleDraft(
                 from: fallbackUserMessage,
@@ -472,7 +636,8 @@ final class LumiViewModel {
                     conversationID: conversationID,
                     conversation: conversation,
                     userMemories: userMemories,
-                    schedules: schedules
+                    schedules: schedules,
+                    bypassingActionConfirmation: bypassingActionConfirmation
                 )
             } else {
                 try await deliver(
@@ -752,6 +917,7 @@ final class LumiViewModel {
         timers.append(timer)
         timers.sort { $0.endsAt < $1.endsAt }
         saveTimers()
+        await LumiTimerLiveActivityManager.startOrUpdate(for: timer)
         return await notificationScheduler.scheduleCompletion(for: timer)
     }
 
@@ -1004,6 +1170,51 @@ final class LumiViewModel {
             && hasExplicitUserMemorySaveRequest(in: userMessage)
     }
 
+    private func actionConfirmationKind(
+        for result: AssistantResult,
+        userMessage: String
+    ) -> LumiActionConfirmationKind? {
+        switch result.action {
+        case .savePlace:
+            return .place
+        case .saveParking:
+            return .parking
+        case .createSchedule:
+            guard let draft = result.scheduleDetail,
+                  let scheduledAt = scheduleDate(from: draft),
+                  scheduledAt > .now,
+                  !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                return nil
+            }
+            return .schedule(draft, scheduledAt)
+        case .startTimer:
+            guard let draft = result.timerDetail,
+                  (1...604_800).contains(draft.durationSeconds)
+            else {
+                return nil
+            }
+            return .timer(draft)
+        case .answer:
+            if shouldCaptureParkingMemory(for: result, userMessage: userMessage) {
+                return .parking
+            }
+            if let draft = relativeScheduleDraft(from: userMessage, userMemory: result.userMemory),
+               let scheduledAt = scheduleDate(from: draft) {
+                return .schedule(draft, scheduledAt)
+            }
+            guard result.shouldSaveUserMemory,
+                  let memory = result.userMemory,
+                  hasExplicitUserMemorySaveRequest(in: userMessage)
+            else {
+                return nil
+            }
+            return .userMemory(memory)
+        case .captureScene, .currentTime, .weather:
+            return nil
+        }
+    }
+
     private func appendConversationTurn(
         userMessage: String,
         assistantMessage: String,
@@ -1107,8 +1318,15 @@ final class LumiViewModel {
     private func removeExpiredTimers(referenceDate: Date = .now) {
         let active = timers.filter { $0.isActive(at: referenceDate) }
         guard active.count != timers.count else { return }
+        let expiredTimerIDs = Set(timers.map(\.id)).subtracting(Set(active.map(\.id)))
         timers = active
         saveTimers()
+
+        Task {
+            for timerID in expiredTimerIDs {
+                await LumiTimerLiveActivityManager.end(timerID: timerID)
+            }
+        }
     }
 
     private func show(_ error: Error) {

@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var memoryEditor: UserMemoryEditor?
     @State private var isShowingClearAllMemoriesConfirmation = false
     @State private var isShowingScheduleEditor = false
+    @State private var isShowingSettings = false
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
     var body: some View {
@@ -82,6 +83,27 @@ struct ContentView: View {
         } message: {
             Text("저장된 사용자 메모리 전체가 삭제되며 복구할 수 없어요.")
         }
+        .confirmationDialog(
+            viewModel.pendingAction?.kind.title ?? "Lumi 실행 확인",
+            isPresented: Binding(
+                get: { viewModel.pendingAction != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.discardPendingAction()
+                    }
+                }
+            ),
+            presenting: viewModel.pendingAction
+        ) { _ in
+            Button("실행") {
+                viewModel.confirmPendingAction()
+            }
+            Button("취소", role: .cancel) {
+                viewModel.cancelPendingAction()
+            }
+        } message: { pendingAction in
+            Text(pendingAction.kind.detail)
+        }
         .sheet(item: $memoryEditor) { editor in
             UserMemoryEditorView(memory: editor.memory) { title, body, category in
                 if let memory = editor.memory {
@@ -100,6 +122,17 @@ struct ContentView: View {
             ScheduleEditorView { title, scheduledAt, note in
                 viewModel.addSchedule(title: title, scheduledAt: scheduledAt, note: note)
             }
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            LumiSettingsView(
+                canConnectGlasses: !viewModel.isGlassesAvailable,
+                isConnectingGlasses: viewModel.isRegistering,
+                onConnectGlasses: viewModel.connectGlasses,
+                onShowIntroduction: {
+                    isShowingSettings = false
+                    hasSeenIntro = false
+                }
+            )
         }
         .onChange(of: viewModel.lastAnswer) {
             hasSavedLatestAnswer = false
@@ -753,7 +786,7 @@ struct ContentView: View {
                         .foregroundStyle(SeedColor.fgInverted)
                         .lineLimit(1)
 
-                    Text("남은 시간")
+                    Text(timer.isPaused ? "일시정지됨" : "남은 시간")
                         .font(.caption)
                         .foregroundStyle(SeedColor.fgInverted.opacity(0.62))
                 }
@@ -765,6 +798,22 @@ struct ContentView: View {
                     .monospacedDigit()
                     .foregroundStyle(SeedColor.fgInverted)
                     .contentTransition(.numericText())
+
+                Button {
+                    if timer.isPaused {
+                        viewModel.resumeTimer(id: timer.id)
+                    } else {
+                        viewModel.pauseTimer(id: timer.id)
+                    }
+                } label: {
+                    Image(systemName: timer.isPaused ? "play.fill" : "pause.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SeedColor.fgInverted.opacity(0.76))
+                        .frame(width: 32, height: 32)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(timer.title) 타이머 \(timer.isPaused ? "재개" : "일시정지")")
 
                 Button {
                     viewModel.cancelTimer(id: timer.id)
@@ -786,7 +835,7 @@ struct ContentView: View {
                     .stroke(.white.opacity(0.1), lineWidth: 0.5)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(timer.title) 타이머, 남은 시간 \(timerCountdown(remaining))")
+            .accessibilityLabel("\(timer.title) 타이머, \(timer.isPaused ? "일시정지됨" : "남은 시간") \(timerCountdown(remaining))")
         }
     }
 
@@ -1265,21 +1314,8 @@ struct ContentView: View {
     }
 
     private var settingsMenu: some View {
-        Menu {
-            if !viewModel.isGlassesAvailable {
-                Button {
-                    viewModel.connectGlasses()
-                } label: {
-                    Label("안경 연결", systemImage: "eyeglasses")
-                }
-                .disabled(viewModel.isRegistering)
-            }
-
-            Button {
-                hasSeenIntro = false
-            } label: {
-                Label("Lumi 소개 다시 보기", systemImage: "rectangle.on.rectangle")
-            }
+        Button {
+            isShowingSettings = true
         } label: {
             Image(systemName: "slider.vertical.3")
                 .font(.system(size: 21, weight: .semibold))
@@ -1347,6 +1383,7 @@ struct ContentView: View {
             || viewModel.isCapturingScene
             || viewModel.isSpeaking
             || viewModel.isRegistering
+            || viewModel.pendingAction != nil
     }
 
     private var voiceButtonAccessibilityHint: String {
@@ -1360,6 +1397,65 @@ struct ContentView: View {
         return "장면 보기"
     }
 
+}
+
+private struct LumiSettingsView: View {
+    let canConnectGlasses: Bool
+    let isConnectingGlasses: Bool
+    let onConnectGlasses: () -> Void
+    let onShowIntroduction: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(LumiPreferences.confirmBeforeActionKey) private var confirmsActionsBeforeExecution = true
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("AI 실행") {
+                    Toggle("실행 전 확인", isOn: $confirmsActionsBeforeExecution)
+
+                    Text("일정, 타이머, 장소·주차 기억, 사용자 메모리를 실행하거나 저장하기 전에 한 번 더 확인해요.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("안경") {
+                    if canConnectGlasses {
+                        Button {
+                            onConnectGlasses()
+                            dismiss()
+                        } label: {
+                            Label(
+                                isConnectingGlasses ? "연결 중" : "Ray-Ban Meta 연결",
+                                systemImage: "eyeglasses"
+                            )
+                        }
+                        .disabled(isConnectingGlasses)
+                    } else {
+                        Label("Ray-Ban Meta 연결됨", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                Section("앱") {
+                    Button {
+                        onShowIntroduction()
+                    } label: {
+                        Label("Lumi 소개 다시 보기", systemImage: "rectangle.on.rectangle")
+                    }
+                }
+            }
+            .navigationTitle("설정")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("완료") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }
 
 private struct UserMemoryEditor: Identifiable {

@@ -9,12 +9,43 @@
 /* Begin PBXBuildFile section */
 		A11C000000000000000000011 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = A11C000000000000000000041 /* MWDATCore */; };
 		A11C000000000000000000012 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = A11C000000000000000000042 /* MWDATCamera */; };
+		B0A000000000000000000001 /* LumiTimerLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0A000000000000000000012 /* LumiTimerLiveActivity.swift */; };
+		B0A000000000000000000002 /* LumiTimerActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0A000000000000000000013 /* LumiTimerActivityAttributes.swift */; };
+		B0A000000000000000000003 /* LumiTimerLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B0A000000000000000000011 /* LumiTimerLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B0A000000000000000000061 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9F16E6F630429BF5005C344C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0A000000000000000000041;
+			remoteInfo = LumiTimerLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B0A000000000000000000034 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B0A000000000000000000003 /* LumiTimerLiveActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		9F16E6FE30429BF5005C344C /* MetaGemini.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MetaGemini.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A11C000000000000000000021 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A11C000000000000000000022 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		B0A000000000000000000011 /* LumiTimerLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LumiTimerLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0A000000000000000000012 /* LumiTimerLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LumiTimerLiveActivity.swift; sourceTree = "<group>"; };
+		B0A000000000000000000013 /* LumiTimerActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../MetaGemini/LumiTimerActivityAttributes.swift; sourceTree = "<group>"; };
+		B0A000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,6 +66,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B0A000000000000000000031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -42,6 +80,7 @@
 			isa = PBXGroup;
 			children = (
 				9F16E70030429BF5005C344C /* MetaGemini */,
+				B0A000000000000000000021 /* LumiTimerLiveActivity */,
 				A11C000000000000000000021 /* Debug.xcconfig */,
 				A11C000000000000000000022 /* Release.xcconfig */,
 				9F16E6FF30429BF5005C344C /* Products */,
@@ -52,8 +91,19 @@
 			isa = PBXGroup;
 			children = (
 				9F16E6FE30429BF5005C344C /* MetaGemini.app */,
+				B0A000000000000000000011 /* LumiTimerLiveActivity.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B0A000000000000000000021 /* LumiTimerLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				B0A000000000000000000012 /* LumiTimerLiveActivity.swift */,
+				B0A000000000000000000013 /* LumiTimerActivityAttributes.swift */,
+				B0A000000000000000000014 /* Info.plist */,
+			);
+			path = LumiTimerLiveActivity;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -65,11 +115,13 @@
 			buildPhases = (
 				9F16E6FA30429BF5005C344C /* Sources */,
 				9F16E6FB30429BF5005C344C /* Frameworks */,
+				B0A000000000000000000034 /* Embed App Extensions */,
 				9F16E6FC30429BF5005C344C /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B0A000000000000000000062 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				9F16E70030429BF5005C344C /* MetaGemini */,
@@ -83,6 +135,23 @@
 			productReference = 9F16E6FE30429BF5005C344C /* MetaGemini.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B0A000000000000000000041 /* LumiTimerLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B0A000000000000000000051 /* Build configuration list for PBXNativeTarget "LumiTimerLiveActivity" */;
+			buildPhases = (
+				B0A000000000000000000033 /* Sources */,
+				B0A000000000000000000031 /* Frameworks */,
+				B0A000000000000000000032 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LumiTimerLiveActivity;
+			productName = LumiTimerLiveActivity;
+			productReference = B0A000000000000000000011 /* LumiTimerLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -94,6 +163,9 @@
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					9F16E6FD30429BF5005C344C = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					B0A000000000000000000041 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -116,12 +188,20 @@
 			projectRoot = "";
 			targets = (
 				9F16E6FD30429BF5005C344C /* MetaGemini */,
+				B0A000000000000000000041 /* LumiTimerLiveActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		9F16E6FC30429BF5005C344C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0A000000000000000000032 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -138,7 +218,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B0A000000000000000000033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0A000000000000000000001 /* LumiTimerLiveActivity.swift in Sources */,
+				B0A000000000000000000002 /* LumiTimerActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B0A000000000000000000062 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B0A000000000000000000041 /* LumiTimerLiveActivity */;
+			targetProxy = B0A000000000000000000061 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		9F16E70730429BF6005C344C /* Debug */ = {
@@ -332,6 +429,50 @@
 			};
 			name = Release;
 		};
+		B0A000000000000000000052 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MKG874C4B4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LumiTimerLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sunkwon.MetaGemini.LumiTimerLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B0A000000000000000000053 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MKG874C4B4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LumiTimerLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sunkwon.MetaGemini.LumiTimerLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -349,6 +490,15 @@
 			buildConfigurations = (
 				9F16E70A30429BF6005C344C /* Debug */,
 				9F16E70B30429BF6005C344C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B0A000000000000000000051 /* Build configuration list for PBXNativeTarget "LumiTimerLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B0A000000000000000000052 /* Debug */,
+				B0A000000000000000000053 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

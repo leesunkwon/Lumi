@@ -34,7 +34,9 @@ struct MetaGeminiApp: App {
         WindowGroup {
             ContentView(viewModel: viewModel)
                 .onOpenURL { url in
-                    viewModel.handleMetaCallback(url)
+                    if !viewModel.handleLumiURL(url) {
+                        viewModel.handleMetaCallback(url)
+                    }
                 }
         }
     }
