@@ -204,6 +204,61 @@ final class LumiViewModel {
     }
 
     func describeScene() {
+        analyzeScene(
+            question: "지금 보는 장면을 설명해줘.",
+            fallbackUserMessage: "지금 보는 장면을 설명해줘."
+        )
+    }
+
+    func translateScene() {
+        analyzeScene(
+            question: """
+            사진에서 읽을 수 있는 텍스트를 찾아 자연스러운 한국어로 번역해줘.
+            메뉴나 문서라면 보이는 순서대로 핵심 내용을 빠뜨리지 않고 번역하고,
+            번역할 텍스트가 없거나 읽기 어렵다면 그 사실만 짧게 알려줘.
+            """,
+            fallbackUserMessage: "사진 속 텍스트를 한국어로 번역해줘."
+        )
+    }
+
+    func saveCurrentPlace() {
+        guard !isBusy, isGlassesAvailable else { return }
+        isProcessing = true
+        startWaitingSounds()
+        let conversationID = activeConversationID
+        let conversation = conversation(for: conversationID)
+        let userMemories = memos
+        let currentSchedules = upcomingSchedules
+        let request = AssistantResult(
+            transcript: "지금 있는 장소를 사진과 위치로 저장해줘.",
+            answer: "",
+            userMemory: nil,
+            shouldSaveUserMemory: false,
+            action: .savePlace,
+            timeDetail: nil,
+            weatherDetail: nil
+        )
+
+        Task {
+            do {
+                try await handleVoiceIntent(
+                    request,
+                    conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules
+                )
+            } catch {
+                isCapturingScene = false
+                isProcessing = false
+                isSpeaking = false
+                stopWaitingSounds()
+                show(error)
+            }
+        }
+    }
+
+    private func analyzeScene(question: String, fallbackUserMessage: String) {
         guard !isBusy, isGlassesAvailable else { return }
         isCapturingScene = true
         startWaitingSounds()
@@ -216,7 +271,7 @@ final class LumiViewModel {
             do {
                 let photoData = try await glassesCamera.capturePhoto()
                 let result = try await gemini.describeScene(
-                    question: "지금 보는 장면을 설명해줘.",
+                    question: question,
                     imageData: photoData,
                     conversation: conversation,
                     userMemories: userMemories,
@@ -224,7 +279,7 @@ final class LumiViewModel {
                 )
                 try await deliver(
                     result,
-                    fallbackUserMessage: "지금 보는 장면을 설명해줘.",
+                    fallbackUserMessage: fallbackUserMessage,
                     conversationID: conversationID,
                     scenePhotoData: photoData
                 )

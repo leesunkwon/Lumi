@@ -538,22 +538,22 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity)
 
                     deviceActionButton(
-                        symbol: "bubble.left.and.bubble.right",
-                        label: "대화 보기",
-                        hint: "현재 대화 세션과 이전 대화를 확인합니다.",
-                        isLoading: false,
-                        isDisabled: false,
-                        action: { selectedTab = .conversations }
+                        symbol: "character.book.closed",
+                        label: translationButtonTitle,
+                        hint: "안경 카메라로 사진을 촬영한 뒤, 읽을 수 있는 텍스트를 한국어로 번역합니다.",
+                        isLoading: viewModel.isCapturingScene,
+                        isDisabled: viewModel.isBusy || viewModel.isRegistering,
+                        action: performTranslationAction
                     )
                     .frame(maxWidth: .infinity)
 
                     deviceActionButton(
-                        symbol: "bookmark",
-                        label: "사용자 메모리 보기",
-                        hint: "Lumi가 명시적으로 저장한 사용자 메모리를 확인합니다.",
-                        isLoading: false,
-                        isDisabled: false,
-                        action: { selectedTab = .memories }
+                        symbol: "mappin.and.ellipse",
+                        label: placeSaveButtonTitle,
+                        hint: "현재 위치와 안경 카메라 사진을 장소 메모리에 저장합니다.",
+                        isLoading: viewModel.isCapturingScene,
+                        isDisabled: viewModel.isBusy || viewModel.isRegistering,
+                        action: performPlaceSaveAction
                     )
                     .frame(maxWidth: .infinity)
                 }
@@ -1342,6 +1342,22 @@ struct ContentView: View {
         }
     }
 
+    private func performTranslationAction() {
+        if viewModel.isGlassesAvailable {
+            viewModel.translateScene()
+        } else {
+            viewModel.connectGlasses()
+        }
+    }
+
+    private func performPlaceSaveAction() {
+        if viewModel.isGlassesAvailable {
+            viewModel.saveCurrentPlace()
+        } else {
+            viewModel.connectGlasses()
+        }
+    }
+
     private var deviceConnectionTitle: String {
         if viewModel.isRegistering { return "연결 중" }
         if viewModel.isGlassesAvailable { return "연결됨" }
@@ -1395,6 +1411,16 @@ struct ContentView: View {
     private var sceneButtonTitle: String {
         if viewModel.isCapturingScene { return "보는 중" }
         return "장면 보기"
+    }
+
+    private var translationButtonTitle: String {
+        if viewModel.isCapturingScene { return "번역 중" }
+        return "카메라 번역"
+    }
+
+    private var placeSaveButtonTitle: String {
+        if viewModel.isCapturingScene { return "저장 중" }
+        return "장소 저장"
     }
 
 }
