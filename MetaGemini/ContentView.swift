@@ -13,6 +13,7 @@ struct ContentView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("lumi.hasSeenIntro") private var hasSeenIntro = false
+    @AppStorage(LumiPreferences.experimentalKeyboardInputKey) private var isExperimentalKeyboardInputEnabled = false
     @State private var selectedTab = LumiTab.assistant
     @State private var hasSavedLatestAnswer = false
     @State private var isAnswerIslandExpanded = true
@@ -24,6 +25,8 @@ struct ContentView: View {
     @State private var isShowingClearAllMemoriesConfirmation = false
     @State private var isShowingScheduleEditor = false
     @State private var isShowingSettings = false
+    @State private var keyboardQuestion = ""
+    @FocusState private var isKeyboardQuestionFocused: Bool
     @ScaledMetric(relativeTo: .largeTitle) private var homeTitleSize: CGFloat = 34
 
     var body: some View {
@@ -574,10 +577,76 @@ struct ContentView: View {
                 .disabled(viewModel.isRegistering)
                 .accessibilityHint("Meta AI 앱에서 Lumi와 안경의 연결을 시작합니다.")
             }
+
+            if isExperimentalKeyboardInputEnabled {
+                Divider()
+                    .overlay(SeedColor.strokeSubtle)
+
+                keyboardQuestionEntry
+            }
         }
         .padding(SeedSpacing.x5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SeedColor.layerDefault, in: RoundedRectangle(cornerRadius: SeedRadius.r5, style: .continuous))
+    }
+
+    private var keyboardQuestionEntry: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+            HStack(spacing: SeedSpacing.x1_5) {
+                Label("키보드 입력", systemImage: "keyboard")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SeedColor.fgNeutral)
+
+                Text("실험")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(SeedColor.fgSubtle)
+
+                Spacer()
+
+                Text("현재 대화에 이어짐")
+                    .font(.caption)
+                    .foregroundStyle(SeedColor.fgSubtle)
+            }
+
+            HStack(alignment: .bottom, spacing: SeedSpacing.x2) {
+                TextField("Lumi에게 질문", text: $keyboardQuestion, axis: .vertical)
+                    .font(.body)
+                    .foregroundStyle(SeedColor.fgNeutral)
+                    .lineLimit(1...4)
+                    .textInputAutocapitalization(.sentences)
+                    .submitLabel(.send)
+                    .focused($isKeyboardQuestionFocused)
+                    .onSubmit(sendKeyboardQuestion)
+                    .disabled(viewModel.isBusy)
+
+                Button(action: sendKeyboardQuestion) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(SeedColor.onBrand)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            keyboardQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isBusy
+                                ? SeedColor.neutralWeak
+                                : SeedColor.brand,
+                            in: Circle()
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(keyboardQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isBusy)
+                .accessibilityLabel("키보드 질문 전송")
+            }
+            .padding(.leading, SeedSpacing.x3)
+            .padding(.trailing, SeedSpacing.x2)
+            .padding(.vertical, SeedSpacing.x2)
+            .background(SeedColor.neutralWeak, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+        }
+    }
+
+    private func sendKeyboardQuestion() {
+        guard viewModel.submitTextQuestion(keyboardQuestion) else { return }
+
+        keyboardQuestion = ""
+        isKeyboardQuestionFocused = false
     }
 
     private func deviceActionButton(
@@ -1433,6 +1502,7 @@ private struct LumiSettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage(LumiPreferences.confirmBeforeActionKey) private var confirmsActionsBeforeExecution = true
+    @AppStorage(LumiPreferences.experimentalKeyboardInputKey) private var isExperimentalKeyboardInputEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -1441,6 +1511,14 @@ private struct LumiSettingsView: View {
                     Toggle("실행 전 확인", isOn: $confirmsActionsBeforeExecution)
 
                     Text("일정, 타이머, 장소·주차 기억, 사용자 메모리를 실행하거나 저장하기 전에 한 번 더 확인해요.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("실험 기능") {
+                    Toggle("키보드 입력", isOn: $isExperimentalKeyboardInputEnabled)
+
+                    Text("안경 마이크를 사용하지 않고 iPhone 키보드로 현재 대화에 질문을 보낼 수 있어요.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

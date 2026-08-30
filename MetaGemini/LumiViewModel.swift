@@ -203,6 +203,47 @@ final class LumiViewModel {
         }
     }
 
+    @discardableResult
+    func submitTextQuestion(_ text: String) -> Bool {
+        let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isBusy else { return false }
+
+        isProcessing = true
+        interactionSounds.play(.questionSent)
+        startWaitingSounds(after: LumiInteractionSound.questionSent.playbackDelay)
+
+        let conversationID = activeConversationID
+        let conversation = conversation(for: conversationID)
+        let userMemories = memos
+        let currentSchedules = upcomingSchedules
+
+        Task {
+            do {
+                let intentResult = try await gemini.answerTextQuestion(
+                    question,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules
+                )
+                try await handleVoiceIntent(
+                    intentResult,
+                    conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules
+                )
+            } catch {
+                isProcessing = false
+                isCapturingScene = false
+                isSpeaking = false
+                stopWaitingSounds()
+                show(error)
+            }
+        }
+
+        return true
+    }
+
     func describeScene() {
         analyzeScene(
             question: "지금 보는 장면을 설명해줘.",

@@ -143,6 +143,65 @@ struct GeminiService {
         )
     }
 
+    func answerTextQuestion(
+        _ question: String,
+        conversation: ConversationSession?,
+        userMemories: [VoiceMemo],
+        schedules: [LumiSchedule]
+    ) async throws -> AssistantResult {
+        let normalizedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuestion.isEmpty else {
+            throw GeminiServiceError.invalidResponse
+        }
+
+        let result = try await generate(
+            instruction: """
+            사용자가 iPhone 키보드로 입력한 질문을 읽고, 의도에 맞는 다음 행동을 선택하세요.
+
+            action은 반드시 다음 중 하나입니다.
+            - capture_scene: 사용자가 지금 보고 있는 물건, 메뉴, 문서, 사람, 주변 장면처럼 새 사진을 찍어야만 답할 수 있는 내용을 분석해 달라고 요청한 경우입니다. answer는 빈 문자열로 남기세요.
+            - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
+            - weather: 사용자가 현재 위치의 날씨, 오늘·내일 날씨, 특정 시간대의 비·눈·기온을 물어본 경우입니다. answer는 빈 문자열로 남기세요. weatherDetail에는 대화 문맥을 반영해 day와 period를 채우세요. 예를 들어 “오늘 날씨 어때”는 today/day, “내일은?”은 tomorrow/day, “오늘 오후에 비 와?”는 today/afternoon, “지금 비 와?”는 today/current입니다. 다른 지역의 날씨는 이 동작을 사용하지 마세요.
+            - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
+            - save_parking: 사용자가 현재 차량의 주차 위치를 기억해 달라고 요청한 경우입니다. “주차한 곳 기억해줘”, “여기 주차했어 기록해줘”, “내 차 위치 메모해줘”가 해당합니다. answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장하며, 최신 주차 기억 하나만 유지합니다.
+            - create_schedule: 사용자가 미래의 특정 시각에 일정·리마인더를 등록해 달라고 명확히 요청한 경우입니다. “내일 3시에 회의 기억해줘”, “금요일 오전 10시에 병원 일정 등록해줘”, “1분 뒤 회의 일정 등록해줘”가 해당합니다. 상대 시간이라도 회의·약속·예약·일정·마감처럼 미래 사건을 등록하는 요청이면 이 동작을 선택하세요. answer는 빈 문자열로 남기세요. scheduleDetail에 제목과 정확한 로컬 ISO 8601 시각을 채우세요. 현재 시간 문맥을 기준으로 계산하고, 날짜나 시간이 하나라도 모호하면 이 동작을 선택하지 말고 짧게 되물으세요.
+            - start_timer: 사용자가 일정 시각이 아닌 지속 시간 타이머·상대 시간 알림을 요청한 경우입니다. “파스타 8분 타이머”, “30분 뒤 알려줘”, “10초 알람”이 해당합니다. 단, 회의·약속·예약·일정·마감의 등록 요청은 상대 시간이어도 create_schedule입니다. answer는 빈 문자열로 남기세요. timerDetail에 목적 제목과 초 단위 durationSeconds를 채우세요. durationSeconds는 1~604800 범위여야 합니다.
+            - answer: 사진이나 현재 시간이 필요하지 않은 모든 요청입니다. 자연스러운 답을 작성하세요.
+
+            단순히 사진이나 시간이라는 단어가 나왔다고 action을 선택하지 마세요. 이전 대화의 사진을 언급하거나 일반적인 사진 관련 질문은 answer로 처리하세요.
+            일정, 사용자 메모리, 아이디어 정리 요청에는 간결하고 실용적으로 답하세요.
+            "기억해줘", "메모해줘", "기록해줘"는 모두 동일한 사용자 메모리 저장 요청입니다.
+            사용자가 이 표현들로 저장할 대상이나 직전 대화 내용을 명확하게 요청하면 shouldSaveUserMemory를 반드시 true로 설정하고 userMemory에 저장할 내용만 정확히 추출하세요.
+            저장 요청을 받았을 때 shouldSaveUserMemory를 false로 두거나 저장했다고 말로만 답하지 마세요.
+            단순히 기억, 메모, 저장이라는 단어를 언급하거나 기억에 관한 질문을 했다는 이유만으로 저장하지 마세요.
+            true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
+            userMemory.category는 반드시 general, schedule, parking, place 중 하나로 정하세요.
+            - schedule: 약속, 일정, 마감과 사용자가 해야 하는 실행 항목
+            - parking: 현재 차량을 주차한 위치나 주차 관련 기억
+            - place: 사용자가 저장하라고 한 현재 장소
+            - general: 그 외 개인 선호, 사실, 아이디어
+            """,
+            audioData: nil,
+            imageData: nil,
+            conversation: conversation,
+            userMemories: userMemories,
+            schedules: schedules,
+            userPrompt: "사용자 텍스트 질문: \(normalizedQuestion)"
+        )
+
+        return AssistantResult(
+            transcript: normalizedQuestion,
+            answer: result.answer,
+            userMemory: result.userMemory,
+            shouldSaveUserMemory: result.shouldSaveUserMemory,
+            action: result.action,
+            timeDetail: result.timeDetail,
+            weatherDetail: result.weatherDetail,
+            scheduleDetail: result.scheduleDetail,
+            timerDetail: result.timerDetail
+        )
+    }
+
     func describeScene(
         question: String = "지금 보는 장면을 설명해줘.",
         imageData: Data,
@@ -321,7 +380,7 @@ struct GeminiService {
 
         반드시 아래 JSON만 반환하세요. Markdown 코드 블록을 쓰지 마세요.
         {
-          "transcript": "음성 입력의 한국어 전사. 이미지 전용이면 빈 문자열",
+          "transcript": "사용자 입력의 한국어 전사 또는 텍스트 입력. 이미지 전용이면 빈 문자열",
           "answer": "사용자에게 들려줄 한국어 답변",
           "shouldSaveUserMemory": true 또는 false,
           "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·일정·숫자·조건만 1~3문장으로 요약", "category": "general | schedule | parking | place" } 또는 null,
