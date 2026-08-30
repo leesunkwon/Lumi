@@ -44,6 +44,10 @@ enum UserMemoryCategory: String, CaseIterable, Codable, Identifiable, Hashable {
         if rawValue == "task" { return .schedule }
         return UserMemoryCategory(rawValue: rawValue) ?? .general
     }
+
+    static var editableCases: [UserMemoryCategory] {
+        [.general, .parking, .place]
+    }
 }
 
 enum UserMemoryDateFilter: Hashable {

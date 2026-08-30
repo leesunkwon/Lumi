@@ -21,9 +21,11 @@ struct ContentView: View {
     @State private var hasPlayedDashboardEntrance = false
     @State private var conversationPath: [UUID] = []
     @State private var memoryPendingDeletion: VoiceMemo?
+    @State private var schedulePendingDeletion: LumiSchedule?
     @State private var memoryEditor: UserMemoryEditor?
     @State private var isShowingClearAllMemoriesConfirmation = false
     @State private var isShowingScheduleEditor = false
+    @State private var editingSchedule: LumiSchedule?
     @State private var isShowingSettings = false
     @State private var keyboardQuestion = ""
     @FocusState private var isKeyboardQuestionFocused: Bool
@@ -87,6 +89,28 @@ struct ContentView: View {
             Text("저장된 사용자 메모리 전체가 삭제되며 복구할 수 없어요.")
         }
         .confirmationDialog(
+            "일정을 삭제할까요?",
+            isPresented: Binding(
+                get: { schedulePendingDeletion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        schedulePendingDeletion = nil
+                    }
+                }
+            ),
+            presenting: schedulePendingDeletion
+        ) { schedule in
+            Button("일정 삭제", role: .destructive) {
+                viewModel.deleteSchedule(id: schedule.id)
+                schedulePendingDeletion = nil
+            }
+            Button("취소", role: .cancel) {
+                schedulePendingDeletion = nil
+            }
+        } message: { schedule in
+            Text("‘\(schedule.title)’ 일정과 예정된 알림이 삭제됩니다.")
+        }
+        .confirmationDialog(
             viewModel.pendingAction?.kind.title ?? "Lumi 실행 확인",
             isPresented: Binding(
                 get: { viewModel.pendingAction != nil },
@@ -121,9 +145,20 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $isShowingScheduleEditor) {
-            ScheduleEditorView { title, scheduledAt, note in
-                viewModel.addSchedule(title: title, scheduledAt: scheduledAt, note: note)
+        .sheet(isPresented: $isShowingScheduleEditor, onDismiss: {
+            editingSchedule = nil
+        }) {
+            ScheduleEditorView(schedule: editingSchedule) { title, scheduledAt, note in
+                if let editingSchedule {
+                    viewModel.updateSchedule(
+                        id: editingSchedule.id,
+                        title: title,
+                        scheduledAt: scheduledAt,
+                        note: note
+                    )
+                } else {
+                    viewModel.addSchedule(title: title, scheduledAt: scheduledAt, note: note)
+                }
             }
         }
         .sheet(isPresented: $isShowingSettings) {
@@ -336,6 +371,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        editingSchedule = nil
                         isShowingScheduleEditor = true
                     } label: {
                         Label("일정 추가", systemImage: "plus")
@@ -384,8 +420,13 @@ struct ContentView: View {
 
             if showsDelete {
                 Menu {
+                    Button("일정 편집") {
+                        editingSchedule = schedule
+                        isShowingScheduleEditor = true
+                    }
+
                     Button("일정 삭제", role: .destructive) {
-                        viewModel.deleteSchedule(id: schedule.id)
+                        schedulePendingDeletion = schedule
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -1027,12 +1068,14 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        memoryEditor = UserMemoryEditor()
-                    } label: {
-                        Label("메모리 추가", systemImage: "plus")
+                    if viewModel.selectedMemoryCategory != .schedule {
+                        Button {
+                            memoryEditor = UserMemoryEditor()
+                        } label: {
+                            Label("메모리 추가", systemImage: "plus")
+                        }
+                        .accessibilityHint("직접 입력할 사용자 메모리를 추가합니다.")
                     }
-                    .accessibilityHint("직접 입력할 사용자 메모리를 추가합니다.")
 
                     settingsMenu
                 }
@@ -1166,17 +1209,18 @@ struct ContentView: View {
     }
 
     private var memoryDatePicker: some View {
-        HStack(spacing: SeedSpacing.x2) {
-            Label("기록 날짜", systemImage: "calendar")
+        let label = viewModel.selectedMemoryCategory == .schedule ? "일정 날짜" : "기록 날짜"
+
+        return HStack(spacing: SeedSpacing.x2) {
+            Label(label, systemImage: "calendar")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(SeedColor.fgMuted)
 
             Spacer()
 
             DatePicker(
-                "기록 날짜",
+                label,
                 selection: $viewModel.selectedMemoryDate,
-                in: ...Date.now,
                 displayedComponents: .date
             )
             .labelsHidden()
@@ -1188,7 +1232,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var memoryContent: some View {
-        if viewModel.memos.isEmpty {
+        if !viewModel.hasMemoryRecords {
             VStack(spacing: SeedSpacing.x4) {
                 emptyMemoryState(
                     symbol: "bookmark",
@@ -1196,10 +1240,12 @@ struct ContentView: View {
                     detail: "음성 질문에서 “이건 기억해줘”라고 말하거나 직접 입력해보세요."
                 )
 
-                Button("메모리 직접 추가") {
-                    memoryEditor = UserMemoryEditor()
+                if viewModel.selectedMemoryCategory != .schedule {
+                    Button("메모리 직접 추가") {
+                        memoryEditor = UserMemoryEditor()
+                    }
+                    .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
                 }
-                .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
             }
         } else if viewModel.filteredMemos.isEmpty {
             VStack(spacing: SeedSpacing.x4) {
@@ -1217,15 +1263,18 @@ struct ContentView: View {
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("사용자 메모리 \(viewModel.filteredMemos.count)개")
+                    Text(memoryResultTitle)
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(SeedColor.fgMuted)
                     Spacer()
-                    Button("전체 삭제", role: .destructive) {
-                        isShowingClearAllMemoriesConfirmation = true
+                    if viewModel.selectedMemoryCategory != .schedule,
+                       viewModel.hasStandaloneUserMemories {
+                        Button("저장 메모리 전체 삭제", role: .destructive) {
+                            isShowingClearAllMemoriesConfirmation = true
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(SeedColor.fgMuted)
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(SeedColor.fgMuted)
                 }
                 .padding(.horizontal, SeedSpacing.x4)
                 .padding(.vertical, SeedSpacing.x3)
@@ -1246,19 +1295,23 @@ struct ContentView: View {
     }
 
     private var memoryEmptyFilterTitle: String {
+        if viewModel.selectedMemoryCategory == .schedule { return "등록한 일정이 없어요" }
         if !viewModel.memoSearchQuery.isEmpty { return "검색 결과가 없어요" }
         if viewModel.hasActiveMemoryDateFilter { return "선택한 날짜에 메모리가 없어요" }
         return "선택한 카테고리에 메모리가 없어요"
     }
 
     private var memoryEmptyFilterDetail: String {
+        if viewModel.selectedMemoryCategory == .schedule { return "일정을 추가하면 여기에 함께 표시돼요." }
         if !viewModel.memoSearchQuery.isEmpty { return "다른 검색어로 다시 찾아보세요." }
         if viewModel.hasActiveMemoryDateFilter { return "다른 날짜를 선택하거나 날짜 필터를 지워보세요." }
         return "다른 카테고리를 선택하거나 직접 추가해보세요."
     }
 
     private func memoryRow(_ memo: VoiceMemo, showsManagement: Bool = false) -> some View {
-        HStack(alignment: .top, spacing: SeedSpacing.x3) {
+        let linkedSchedule = viewModel.schedule(forMemoryID: memo.id)
+
+        return HStack(alignment: .top, spacing: SeedSpacing.x3) {
             Image(systemName: memo.category.symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(SeedColor.brand)
@@ -1270,7 +1323,7 @@ struct ContentView: View {
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(SeedColor.fgNeutral)
 
-                Text(memo.category.title)
+                Text(linkedSchedule == nil ? memo.category.title : "일정 · 연결됨")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(SeedColor.brand)
                     .padding(.horizontal, SeedSpacing.x1_5)
@@ -1280,10 +1333,26 @@ struct ContentView: View {
                         in: Capsule(style: .continuous)
                     )
 
-                Text(memo.body)
+                if let linkedSchedule {
+                    Label(
+                        linkedSchedule.scheduledAt.formatted(date: .abbreviated, time: .shortened),
+                        systemImage: "calendar"
+                    )
                     .font(.subheadline)
                     .foregroundStyle(SeedColor.fgMuted)
-                    .lineLimit(3)
+
+                    if let note = linkedSchedule.note, !note.isEmpty {
+                        Text(note)
+                            .font(.subheadline)
+                            .foregroundStyle(SeedColor.fgMuted)
+                            .lineLimit(3)
+                    }
+                } else {
+                    Text(memo.body)
+                        .font(.subheadline)
+                        .foregroundStyle(SeedColor.fgMuted)
+                        .lineLimit(3)
+                }
 
                 if let photoFilename = memo.photoFilename {
                     UserMemoryPhotoThumbnail(filename: photoFilename)
@@ -1308,7 +1377,11 @@ struct ContentView: View {
                     .padding(.top, SeedSpacing.x1)
                 }
 
-                Text(memo.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(
+                    linkedSchedule == nil
+                        ? memo.createdAt.formatted(date: .abbreviated, time: .shortened)
+                        : "등록 \(memo.createdAt.formatted(date: .abbreviated, time: .shortened))"
+                )
                     .font(.caption2)
                     .foregroundStyle(SeedColor.fgSubtle)
             }
@@ -1317,7 +1390,12 @@ struct ContentView: View {
 
             if showsManagement {
                 Button {
-                    memoryEditor = UserMemoryEditor(memory: memo)
+                    if let linkedSchedule {
+                        editingSchedule = linkedSchedule
+                        isShowingScheduleEditor = true
+                    } else {
+                        memoryEditor = UserMemoryEditor(memory: memo)
+                    }
                 } label: {
                     Image(systemName: "pencil")
                         .font(.system(size: 14, weight: .semibold))
@@ -1329,7 +1407,11 @@ struct ContentView: View {
                 .accessibilityLabel("\(memo.title) 편집")
 
                 Button {
-                    memoryPendingDeletion = memo
+                    if let linkedSchedule {
+                        schedulePendingDeletion = linkedSchedule
+                    } else {
+                        memoryPendingDeletion = memo
+                    }
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 14, weight: .semibold))
@@ -1344,6 +1426,14 @@ struct ContentView: View {
         .padding(.horizontal, SeedSpacing.x3)
         .padding(.vertical, SeedSpacing.x3)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var memoryResultTitle: String {
+        if viewModel.selectedMemoryCategory == .schedule {
+            return "연결된 일정 \(viewModel.filteredMemos.count)개"
+        }
+
+        return "사용자 메모리 \(viewModel.filteredMemos.count)개"
     }
 
     private func emptyMemoryState(symbol: String, title: String, detail: String) -> some View {
@@ -1572,12 +1662,25 @@ private struct UserMemoryEditor: Identifiable {
 }
 
 private struct ScheduleEditorView: View {
+    let schedule: LumiSchedule?
     let onSave: (String, Date, String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var scheduledAt = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now
-    @State private var note = ""
+    @State private var title: String
+    @State private var scheduledAt: Date
+    @State private var note: String
+
+    init(schedule: LumiSchedule? = nil, onSave: @escaping (String, Date, String?) -> Void) {
+        self.schedule = schedule
+        self.onSave = onSave
+        _title = State(initialValue: schedule?.title ?? "")
+        _scheduledAt = State(
+            initialValue: schedule?.scheduledAt
+                ?? Calendar.current.date(byAdding: .hour, value: 1, to: .now)
+                ?? .now
+        )
+        _note = State(initialValue: schedule?.note ?? "")
+    }
 
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1604,7 +1707,7 @@ private struct ScheduleEditorView: View {
                         .foregroundStyle(SeedColor.fgMuted)
                 }
             }
-            .navigationTitle("일정 추가")
+            .navigationTitle(schedule == nil ? "일정 추가" : "일정 편집")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1664,7 +1767,7 @@ private struct UserMemoryEditorView: View {
 
                 Section("카테고리") {
                     Picker("카테고리", selection: $category) {
-                        ForEach(UserMemoryCategory.allCases) { category in
+                        ForEach(UserMemoryCategory.editableCases) { category in
                             Label(category.title, systemImage: category.symbol)
                                 .tag(category)
                         }

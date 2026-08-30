@@ -49,16 +49,32 @@ final class LumiViewModel {
 
     var filteredMemos: [VoiceMemo] {
         let query = memoSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allMemoryRecords = memos + scheduleMemoryRecords
         let categoryMemos = selectedMemoryCategory.map { category in
-            memos.filter { $0.category == category }
-        } ?? memos
+            allMemoryRecords.filter { $0.category == category }
+        } ?? allMemoryRecords
         let datedMemos = categoryMemos.filter { matchesSelectedMemoryDate($0) }
-        guard !query.isEmpty else { return datedMemos }
-
-        return datedMemos.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-                || $0.body.localizedCaseInsensitiveContains(query)
+        let filteredMemos: [VoiceMemo]
+        if query.isEmpty {
+            filteredMemos = datedMemos
+        } else {
+            filteredMemos = datedMemos.filter {
+                $0.title.localizedCaseInsensitiveContains(query)
+                    || $0.body.localizedCaseInsensitiveContains(query)
+            }
         }
+
+        return filteredMemos.sorted {
+            memoryTimelineDate(for: $0) > memoryTimelineDate(for: $1)
+        }
+    }
+
+    var hasMemoryRecords: Bool {
+        !memos.isEmpty || !schedules.isEmpty
+    }
+
+    var hasStandaloneUserMemories: Bool {
+        !memos.isEmpty
     }
 
     var hasActiveMemoryDateFilter: Bool {
@@ -98,7 +114,8 @@ final class LumiViewModel {
     init(wearables: WearablesInterface, configurationError: String? = nil) {
         self.wearables = wearables
         self.glassesCamera = GlassesCamera(wearables: wearables)
-        self.memos = Self.loadMemos()
+        let storedMemos = Self.loadMemos()
+        self.memos = Self.migrateLegacyScheduleMemos(storedMemos)
         self.schedules = Self.loadSchedules()
         self.timers = Self.loadTimers()
         self.removeExpiredTimers()
@@ -119,7 +136,11 @@ final class LumiViewModel {
            self.conversations.contains(where: { $0.id == storedActiveConversationID }) {
             self.activeConversationID = storedActiveConversationID
         } else {
-            self.activeConversationID = self.conversations.first?.id
+        self.activeConversationID = self.conversations.first?.id
+        }
+
+        if self.memos != storedMemos {
+            saveUserMemories()
         }
 
         if let configurationError {
@@ -343,7 +364,7 @@ final class LumiViewModel {
     func addUserMemory(title: String, body: String, category: UserMemoryCategory) {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
+        guard category != .schedule, !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
 
         saveUserMemory(
             VoiceMemo(
@@ -364,7 +385,7 @@ final class LumiViewModel {
 
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
+        guard category != .schedule, !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
 
         memos.removeAll { $0.id == id }
         saveUserMemory(
@@ -413,11 +434,42 @@ final class LumiViewModel {
         }
     }
 
+    func updateSchedule(id: UUID, title: String, scheduledAt: Date, note: String? = nil) {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = schedules.firstIndex(where: { $0.id == id }),
+              !normalizedTitle.isEmpty,
+              scheduledAt > .now
+        else {
+            return
+        }
+
+        let existingSchedule = schedules[index]
+        let updatedSchedule = LumiSchedule(
+            id: existingSchedule.id,
+            title: normalizedTitle,
+            scheduledAt: scheduledAt,
+            note: note,
+            createdAt: existingSchedule.createdAt
+        )
+        schedules[index] = updatedSchedule
+        schedules.sort { $0.scheduledAt < $1.scheduledAt }
+        saveSchedules()
+        notificationScheduler.cancel(identifier: existingSchedule.notificationIdentifier)
+
+        Task {
+            _ = await notificationScheduler.scheduleReminder(for: updatedSchedule)
+        }
+    }
+
     func deleteSchedule(id: UUID) {
         guard let schedule = schedules.first(where: { $0.id == id }) else { return }
         schedules.removeAll { $0.id == id }
         saveSchedules()
         notificationScheduler.cancel(identifier: schedule.notificationIdentifier)
+    }
+
+    func schedule(forMemoryID id: UUID) -> LumiSchedule? {
+        schedules.first { $0.id == id }
     }
 
     func cancelTimer(id: UUID) {
@@ -894,8 +946,8 @@ final class LumiViewModel {
             let scheduleResult = AssistantResult(
                 transcript: result.transcript,
                 answer: "\(scheduleDateDescription(scheduledAt))에 \(draft.title) 일정을 등록했고, \(notificationAnswer)",
-                userMemory: result.userMemory,
-                shouldSaveUserMemory: result.shouldSaveUserMemory,
+                userMemory: nil,
+                shouldSaveUserMemory: false,
                 action: .answer,
                 timeDetail: nil,
                 weatherDetail: nil
@@ -1187,6 +1239,7 @@ final class LumiViewModel {
 
         let hasExplicitMemoryRequest = hasExplicitUserMemorySaveRequest(in: userMessage)
         if let userMemory = result.userMemory,
+           userMemory.category != .schedule,
            hasExplicitMemoryRequest {
             let userMemoryPhotoFilename = userMemoryPhotoData.flatMap { try? UserMemoryPhotoStore.save($0) }
             saveUserMemory(
@@ -1301,6 +1354,7 @@ final class LumiViewModel {
             }
             guard result.shouldSaveUserMemory,
                   let memory = result.userMemory,
+                  memory.category != .schedule,
                   hasExplicitUserMemorySaveRequest(in: userMessage)
             else {
                 return nil
@@ -1390,25 +1444,58 @@ final class LumiViewModel {
 
     private func matchesSelectedMemoryDate(_ memory: VoiceMemo) -> Bool {
         let calendar = Calendar.current
+        let referenceDate = memoryTimelineDate(for: memory)
 
         switch selectedMemoryDateFilter {
         case .all:
             return true
         case .today:
-            return calendar.isDateInToday(memory.createdAt)
+            return calendar.isDateInToday(referenceDate)
         case .yesterday:
-            return calendar.isDateInYesterday(memory.createdAt)
+            return calendar.isDateInYesterday(referenceDate)
         case .thisWeek:
             guard let week = calendar.dateInterval(of: .weekOfYear, for: .now) else { return false }
-            return week.contains(memory.createdAt)
+            return week.contains(referenceDate)
         case .custom:
-            return calendar.isDate(memory.createdAt, inSameDayAs: selectedMemoryDate)
+            return calendar.isDate(referenceDate, inSameDayAs: selectedMemoryDate)
         }
+    }
+
+    private var scheduleMemoryRecords: [VoiceMemo] {
+        schedules.map { schedule in
+            VoiceMemo(
+                id: schedule.id,
+                title: schedule.title,
+                body: schedule.note ?? "",
+                category: .schedule,
+                createdAt: schedule.createdAt
+            )
+        }
+    }
+
+    private func memoryTimelineDate(for memory: VoiceMemo) -> Date {
+        schedule(forMemoryID: memory.id)?.scheduledAt ?? memory.createdAt
     }
 
     private func saveUserMemories() {
         guard let data = try? JSONEncoder().encode(memos) else { return }
         UserDefaults.standard.set(data, forKey: Self.memosKey)
+    }
+
+    private static func migrateLegacyScheduleMemos(_ memos: [VoiceMemo]) -> [VoiceMemo] {
+        memos.map { memory in
+            guard memory.category == .schedule else { return memory }
+
+            return VoiceMemo(
+                id: memory.id,
+                title: memory.title,
+                body: memory.body,
+                category: .general,
+                photoFilename: memory.photoFilename,
+                location: memory.location,
+                createdAt: memory.createdAt
+            )
+        }
     }
 
     private func removeExpiredTimers(referenceDate: Date = .now) {
