@@ -7,6 +7,7 @@ import Foundation
 
 enum LumiActionConfirmationKind {
     case userMemory(UserMemoryDraft)
+    case updateUserMemory(existing: VoiceMemo, updated: UserMemoryDraft)
     case place
     case parking
     case schedule(ScheduleDraft, Date)
@@ -16,6 +17,8 @@ enum LumiActionConfirmationKind {
         switch self {
         case .userMemory:
             return "사용자 메모리에 저장할까요?"
+        case .updateUserMemory:
+            return "사용자 메모리를 수정할까요?"
         case .place:
             return "이 장소를 기억할까요?"
         case .parking:
@@ -31,6 +34,8 @@ enum LumiActionConfirmationKind {
         switch self {
         case .userMemory(let memory):
             return "\(memory.body)"
+        case .updateUserMemory(let existing, let updated):
+            return "‘\(existing.title)’을 ‘\(updated.title)’으로 바꿔요.\n\(updated.body)"
         case .place:
             return "안경 사진과 현재 위치를 함께 저장해요."
         case .parking:
@@ -46,6 +51,8 @@ enum LumiActionConfirmationKind {
         switch self {
         case .userMemory:
             return "사용자 메모리 저장을 취소했어요."
+        case .updateUserMemory:
+            return "사용자 메모리 수정을 취소했어요."
         case .place:
             return "장소 기억을 취소했어요."
         case .parking:

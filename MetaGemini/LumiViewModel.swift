@@ -918,6 +918,46 @@ final class LumiViewModel {
                 userMemoryLocation: memoryLocation
             )
 
+        case .updateUserMemory:
+            guard let update = resolvedUserMemoryUpdate(result.userMemoryUpdate) else {
+                let clarificationResult = AssistantResult(
+                    transcript: result.transcript,
+                    answer: "수정할 사용자 메모리를 정확히 찾지 못했어요. 메모 제목이나 내용을 조금 더 알려주세요.",
+                    userMemory: nil,
+                    shouldSaveUserMemory: false,
+                    action: .answer,
+                    timeDetail: nil,
+                    weatherDetail: nil
+                )
+                try await deliver(
+                    clarificationResult,
+                    fallbackUserMessage: fallbackUserMessage,
+                    conversationID: conversationID
+                )
+                return
+            }
+
+            updateUserMemory(
+                id: update.existing.id,
+                title: update.updated.title,
+                body: update.updated.body,
+                category: update.updated.category
+            )
+            let updateResult = AssistantResult(
+                transcript: result.transcript,
+                answer: "‘\(update.existing.title)’ 메모리를 수정했어요.",
+                userMemory: nil,
+                shouldSaveUserMemory: false,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                updateResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
+
         case .createSchedule:
             guard let draft = result.scheduleDetail,
                   let scheduledAt = scheduleDate(from: draft),
@@ -1325,6 +1365,27 @@ final class LumiViewModel {
             && hasExplicitUserMemorySaveRequest(in: userMessage)
     }
 
+    private func resolvedUserMemoryUpdate(
+        _ draft: UserMemoryUpdateDraft?
+    ) -> (existing: VoiceMemo, updated: UserMemoryDraft)? {
+        guard let draft,
+              let existing = memos.first(where: { $0.id == draft.memoryID })
+        else {
+            return nil
+        }
+
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = draft.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard draft.category != .schedule, !title.isEmpty, !body.isEmpty else {
+            return nil
+        }
+
+        return (
+            existing,
+            UserMemoryDraft(title: title, body: body, category: draft.category)
+        )
+    }
+
     private func actionConfirmationKind(
         for result: AssistantResult,
         userMessage: String
@@ -1334,6 +1395,11 @@ final class LumiViewModel {
             return .place
         case .saveParking:
             return .parking
+        case .updateUserMemory:
+            guard let update = resolvedUserMemoryUpdate(result.userMemoryUpdate) else {
+                return nil
+            }
+            return .updateUserMemory(existing: update.existing, updated: update.updated)
         case .createSchedule:
             guard let draft = result.scheduleDetail,
                   let scheduledAt = scheduleDate(from: draft),
