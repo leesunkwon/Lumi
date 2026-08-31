@@ -5,6 +5,8 @@
 //  Created by sunkwon on 8/29/26.
 //
 
+import CoreLocation
+import MapKit
 import SwiftUI
 import UIKit
 
@@ -1094,6 +1096,9 @@ struct ContentView: View {
                 }
             }
         }
+        .onAppear {
+            viewModel.refreshMemoryLocation()
+        }
     }
 
     private var memorySearchField: some View {
@@ -1394,21 +1399,21 @@ struct ContentView: View {
                 }
 
                 if let location = memo.location {
-                    VStack(alignment: .leading, spacing: SeedSpacing.x1) {
-                        Label(location.displayName, systemImage: "mappin.and.ellipse")
-                            .font(.caption)
-                            .foregroundStyle(SeedColor.fgMuted)
-                            .lineLimit(2)
-
-                        if let mapURL = location.mapURL {
-                            Link(destination: mapURL) {
-                                Label("지도에서 열기", systemImage: "arrow.up.right.square")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .foregroundStyle(SeedColor.brand)
-                        }
+                    if memo.category == .place || memo.category == .parking {
+                        UserMemoryLocationPreview(
+                            location: location,
+                            distance: viewModel.distanceFromCurrentLocation(to: location),
+                            onRequestDistance: viewModel.requestMemoryLocation
+                        )
+                        .padding(.top, SeedSpacing.x2)
+                    } else {
+                        UserMemoryLocationSummary(
+                            location: location,
+                            distance: viewModel.distanceFromCurrentLocation(to: location),
+                            onRequestDistance: viewModel.requestMemoryLocation
+                        )
+                        .padding(.top, SeedSpacing.x1)
                     }
-                    .padding(.top, SeedSpacing.x1)
                 }
 
                 Text(
@@ -1843,6 +1848,12 @@ private struct UserMemoryEditorView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+
+                    if category == .general {
+                        Label("저장할 때 iPhone의 현재 위치를 함께 기록해요.", systemImage: "location.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle(memory == nil ? "메모리 추가" : "메모리 편집")
@@ -2034,6 +2045,115 @@ private struct ConversationPhotoThumbnail: View {
         }
         .accessibilityLabel("안경으로 촬영한 장면 사진")
     }
+}
+
+private struct UserMemoryLocationSummary: View {
+    let location: UserMemoryLocation
+    let distance: CLLocationDistance?
+    let onRequestDistance: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+            Label(location.displayName, systemImage: "mappin.and.ellipse")
+                .font(.caption)
+                .foregroundStyle(SeedColor.fgMuted)
+                .lineLimit(2)
+
+            HStack(spacing: SeedSpacing.x3) {
+                if let distance {
+                    Label(
+                        "현재 위치에서 \(formattedDistance(distance))",
+                        systemImage: "location.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SeedColor.fgMuted)
+                } else {
+                    Button("현재 위치에서 거리 확인", action: onRequestDistance)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(SeedColor.brand)
+                }
+
+                if let mapURL = location.mapURL {
+                    Link(destination: mapURL) {
+                        Label("지도", systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(SeedColor.brand)
+                }
+            }
+        }
+    }
+}
+
+private struct UserMemoryLocationPreview: View {
+    let location: UserMemoryLocation
+    let distance: CLLocationDistance?
+    let onRequestDistance: () -> Void
+
+    private var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
+    }
+
+    private var mapRegion: MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: coordinate,
+            span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+            Map(initialPosition: .region(mapRegion), interactionModes: []) {
+                Marker(location.displayName, coordinate: coordinate)
+                    .tint(SeedColor.brand)
+            }
+            .frame(height: 136)
+            .clipShape(RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous)
+                    .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+            }
+            .accessibilityLabel("\(location.displayName) 지도")
+
+            Label(location.displayName, systemImage: "mappin.and.ellipse")
+                .font(.caption)
+                .foregroundStyle(SeedColor.fgMuted)
+                .lineLimit(2)
+
+            HStack(spacing: SeedSpacing.x3) {
+                if let distance {
+                    Label(
+                        "현재 위치에서 \(formattedDistance(distance))",
+                        systemImage: "location.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SeedColor.fgMuted)
+                } else {
+                    Button("현재 위치에서 거리 확인", action: onRequestDistance)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(SeedColor.brand)
+                }
+
+                if let mapURL = location.mapURL {
+                    Link(destination: mapURL) {
+                        Label("지도에서 열기", systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(SeedColor.brand)
+                }
+            }
+        }
+        .padding(SeedSpacing.x2)
+        .background(SeedColor.layerFill, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+    }
+}
+
+private func formattedDistance(_ distance: CLLocationDistance) -> String {
+    if distance < 1_000 {
+        return "\(Int(distance.rounded()))m"
+    }
+
+    return String(format: "%.1fkm", distance / 1_000)
 }
 
 private struct UserMemoryPhotoThumbnail: View {

@@ -30,6 +30,7 @@ final class LumiViewModel {
     var memos: [VoiceMemo] = []
     var schedules: [LumiSchedule] = []
     var timers: [LumiTimer] = []
+    var currentMemoryLocation: CLLocation?
     var pendingAction: PendingLumiAction?
     var isShowingError = false
     var errorMessage = ""
@@ -61,8 +62,7 @@ final class LumiViewModel {
             filteredMemos = datedMemos
         } else {
             filteredMemos = datedMemos.filter {
-                $0.title.localizedCaseInsensitiveContains(query)
-                    || $0.body.localizedCaseInsensitiveContains(query)
+                memory($0, matchesSearchQuery: query)
             }
         }
 
@@ -112,6 +112,7 @@ final class LumiViewModel {
     @ObservationIgnored private let gemini = GeminiService()
     @ObservationIgnored private let weather = WeatherService()
     @ObservationIgnored private let locationProvider = CurrentLocationProvider()
+    @ObservationIgnored private let memoryLocationProvider = CurrentLocationProvider()
     @ObservationIgnored private let notificationScheduler = LumiNotificationScheduler()
     @ObservationIgnored private let glassesCamera: GlassesCamera
     @ObservationIgnored private var registrationTask: Task<Void, Never>?
@@ -379,7 +380,11 @@ final class LumiViewModel {
         guard let lastAnswer else { return }
 
         let title = lastTranscript.map(conversationTitle(for:)) ?? "Lumi 답변"
-        saveUserMemory(VoiceMemo(title: title, body: lastAnswer))
+        Task { [weak self] in
+            guard let self else { return }
+            let location = await self.captureCurrentMemoryLocation()
+            self.saveUserMemory(VoiceMemo(title: title, body: lastAnswer, location: location))
+        }
     }
 
     func addUserMemory(title: String, body: String, category: UserMemoryCategory) {
@@ -387,13 +392,18 @@ final class LumiViewModel {
         let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard category != .schedule, !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
 
-        saveUserMemory(
-            VoiceMemo(
-                title: normalizedTitle,
-                body: normalizedBody,
-                category: category
+        Task { [weak self] in
+            guard let self else { return }
+            let location = await self.captureCurrentMemoryLocation()
+            self.saveUserMemory(
+                VoiceMemo(
+                    title: normalizedTitle,
+                    body: normalizedBody,
+                    category: category,
+                    location: location
+                )
             )
-        )
+        }
     }
 
     func updateUserMemory(
@@ -470,6 +480,7 @@ final class LumiViewModel {
             title: normalizedTitle,
             scheduledAt: scheduledAt,
             note: note,
+            location: existingSchedule.location,
             createdAt: existingSchedule.createdAt
         )
         schedules[index] = updatedSchedule
@@ -667,6 +678,26 @@ final class LumiViewModel {
 
     func refreshAudioDeviceStatus() {
         audioDeviceStatus = LumiAudioRoute.currentDeviceStatus()
+    }
+
+    func refreshMemoryLocation() {
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await self.captureCurrentMemoryLocation(requestingPermission: false)
+        }
+    }
+
+    func requestMemoryLocation() {
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await self.captureCurrentMemoryLocation()
+        }
+    }
+
+    func distanceFromCurrentLocation(to location: UserMemoryLocation) -> CLLocationDistance? {
+        guard let currentMemoryLocation else { return nil }
+        let memoryLocation = CLLocation(latitude: location.latitude, longitude: location.longitude)
+        return currentMemoryLocation.distance(from: memoryLocation)
     }
 
     func clearMemoryFilters() {
@@ -880,6 +911,7 @@ final class LumiViewModel {
 
             let photoData = try await glassesCamera.capturePhoto()
             let location = try await locationProvider.currentLocation()
+            currentMemoryLocation = location
             let memoryLocation = await userMemoryLocation(from: location)
             let placeResult = AssistantResult(
                 transcript: result.transcript,
@@ -909,6 +941,7 @@ final class LumiViewModel {
 
             let photoData = try await glassesCamera.capturePhoto()
             let location = try await locationProvider.currentLocation()
+            currentMemoryLocation = location
             let memoryLocation = await userMemoryLocation(from: location)
             let parkingDraft = result.userMemory ?? UserMemoryDraft(
                 title: "주차 위치",
@@ -1111,7 +1144,7 @@ final class LumiViewModel {
         userMemoryPhotoData: Data? = nil,
         userMemoryLocation: UserMemoryLocation? = nil
     ) async throws {
-        apply(
+        await apply(
             result,
             fallbackUserMessage: fallbackUserMessage,
             conversationID: conversationID,
@@ -1149,7 +1182,13 @@ final class LumiViewModel {
         scheduledAt: Date,
         note: String?
     ) async -> Bool {
-        let schedule = LumiSchedule(title: title, scheduledAt: scheduledAt, note: note)
+        let location = await captureCurrentMemoryLocation()
+        let schedule = LumiSchedule(
+            title: title,
+            scheduledAt: scheduledAt,
+            note: note,
+            location: location
+        )
         schedules.append(schedule)
         schedules.sort { $0.scheduledAt < $1.scheduledAt }
         saveSchedules()
@@ -1323,7 +1362,7 @@ final class LumiViewModel {
         scenePhotoData: Data? = nil,
         userMemoryPhotoData: Data? = nil,
         userMemoryLocation: UserMemoryLocation? = nil
-    ) {
+    ) async {
         let transcript = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let userMessage = (transcript?.isEmpty == false ? transcript : nil) ?? fallbackUserMessage
         let photoFilename = scenePhotoData.flatMap { try? ConversationPhotoStore.save($0) }
@@ -1344,15 +1383,35 @@ final class LumiViewModel {
            userMemory.category != .schedule,
            hasExplicitMemoryRequest {
             let userMemoryPhotoFilename = userMemoryPhotoData.flatMap { try? UserMemoryPhotoStore.save($0) }
+            let memoryLocation: UserMemoryLocation?
+            if let userMemoryLocation {
+                memoryLocation = userMemoryLocation
+            } else {
+                memoryLocation = await captureCurrentMemoryLocation()
+            }
             saveUserMemory(
                 VoiceMemo(
                     title: userMemory.title,
                     body: userMemory.body,
                     category: userMemory.category,
                     photoFilename: userMemoryPhotoFilename,
-                    location: userMemoryLocation
+                    location: memoryLocation
                 )
             )
+        }
+    }
+
+    private func captureCurrentMemoryLocation(
+        requestingPermission: Bool = true
+    ) async -> UserMemoryLocation? {
+        guard requestingPermission || memoryLocationProvider.isAuthorized else { return nil }
+
+        do {
+            let location = try await memoryLocationProvider.currentLocation()
+            currentMemoryLocation = location
+            return await userMemoryLocation(from: location)
+        } catch {
+            return nil
         }
     }
 
@@ -1608,9 +1667,22 @@ final class LumiViewModel {
                 title: schedule.title,
                 body: schedule.note ?? "",
                 category: .schedule,
+                location: schedule.location,
                 createdAt: schedule.createdAt
             )
         }
+    }
+
+    private func memory(_ memory: VoiceMemo, matchesSearchQuery query: String) -> Bool {
+        let searchableValues = [
+            memory.title,
+            memory.body,
+            memory.category.title,
+            memory.location?.displayName ?? "",
+            memory.location.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? ""
+        ]
+
+        return searchableValues.contains { $0.localizedCaseInsensitiveContains(query) }
     }
 
     private func memoryTimelineDate(for memory: VoiceMemo) -> Date {

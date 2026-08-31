@@ -10,6 +10,7 @@ struct LumiSchedule: Codable, Identifiable, Hashable {
     let title: String
     let scheduledAt: Date
     let note: String?
+    let location: UserMemoryLocation?
     let createdAt: Date
 
     init(
@@ -17,12 +18,14 @@ struct LumiSchedule: Codable, Identifiable, Hashable {
         title: String,
         scheduledAt: Date,
         note: String? = nil,
+        location: UserMemoryLocation? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
         self.title = title
         self.scheduledAt = scheduledAt
         self.note = note?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.location = location
         self.createdAt = createdAt
     }
 

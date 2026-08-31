@@ -404,12 +404,15 @@ struct GeminiService {
         아래는 사용자가 명시적으로 저장한 사용자 메모리입니다. 각 항목의 기록 시각은 메모리를 저장한 시점이며,
         현재 시간과 비교해 “지난주에 기억해 둔 일정”처럼 메모리의 상대적인 기록 시점을 해석할 때 참고하세요.
         기록 시각을 실제 일정이나 사건의 발생 시각으로 단정하지 말고, 메모리 본문에 적힌 날짜·시간을 우선하세요.
+        각 항목의 기록 장소는 메모리를 저장한 당시 iPhone 위치입니다. “어제 부산에서 기록한 메모”, “지난주 카페에서 말한 아이디어”처럼
+        날짜·장소·분류가 함께 주어진 질문에서는 세 정보를 조합해 관련 메모리만 답하세요. 주차 위치를 물으면 parking 분류의 최신 기록을 우선하고,
+        저장 시각과 장소를 짧게 알려주세요. 위치가 기록되지 않은 예전 메모리는 장소를 추측하지 마세요.
         현재 질문과 관련된 항목만 자연스럽게 사용하고, 메모리 목록 전체를 그대로 나열하지 마세요.
         <user_memories>
         \(userMemoryContext)
         </user_memories>
 
-        아래는 Lumi에 등록된 앞으로의 일정입니다. 일정 시각을 사용자의 새로운 요청과 혼동하지 말고, “내일 일정”, “다음 약속” 같은 질문을 답할 때만 참고하세요.
+        아래는 Lumi에 등록된 앞으로의 일정입니다. 일정 시각을 사용자의 새로운 요청과 혼동하지 말고, “내일 일정”, “다음 약속” 같은 질문을 답할 때만 참고하세요. 등록 장소는 일정을 만든 당시의 iPhone 위치이며, 위치가 없는 예전 일정은 장소를 추측하지 마세요.
         <upcoming_schedules>
         \(scheduleContext)
         </upcoming_schedules>
@@ -575,7 +578,10 @@ struct GeminiService {
             .map { memory in
                 let title = memory.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 let body = memory.body.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "[메모리 ID: \(memory.id.uuidString)] [기록 시각: \(formatter.string(from: memory.createdAt))] [분류: \(memory.category.rawValue)] \(title) — \(body)"
+                let place = memory.location.map { location in
+                    "[기록 장소: \(location.displayName)] [좌표: \(String(format: "%.5f, %.5f", location.latitude, location.longitude))]"
+                } ?? "[기록 장소: 위치 미기록]"
+                return "[메모리 ID: \(memory.id.uuidString)] [기록 시각: \(formatter.string(from: memory.createdAt))] [분류: \(memory.category.rawValue)] \(place) \(title) — \(body)"
             }
             .joined(separator: "\n")
     }
@@ -596,7 +602,8 @@ struct GeminiService {
         return upcoming
             .map { schedule in
                 let note = schedule.note.map { " — \($0)" } ?? ""
-                return "[일정 시각: \(formatter.string(from: schedule.scheduledAt))] \(schedule.title)\(note)"
+                let place = schedule.location.map { " [등록 장소: \($0.displayName)]" } ?? ""
+                return "[일정 시각: \(formatter.string(from: schedule.scheduledAt))] [기록 시각: \(formatter.string(from: schedule.createdAt))]\(place) \(schedule.title)\(note)"
             }
             .joined(separator: "\n")
     }

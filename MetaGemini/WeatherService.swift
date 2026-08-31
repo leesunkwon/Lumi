@@ -543,6 +543,17 @@ final class CurrentLocationProvider: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
+    var isAuthorized: Bool {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return true
+        case .notDetermined, .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
     func currentLocation() async throws -> CLLocation {
         switch manager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:

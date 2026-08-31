@@ -36,7 +36,7 @@ enum LumiActionConfirmationKind {
     var detail: String {
         switch self {
         case .userMemory(let memory):
-            return "\(memory.body)"
+            return "\(memory.body)\n현재 위치도 함께 기록해요."
         case .updateUserMemory(let existing, let updated):
             return "‘\(existing.title)’을 ‘\(updated.title)’으로 바꿔요.\n\(updated.body)"
         case .deleteUserMemory(let memory):
