@@ -32,6 +32,7 @@ final class LumiViewModel {
     var pendingAction: PendingLumiAction?
     var isShowingError = false
     var errorMessage = ""
+    var voiceAudioDestination = "안경 우선"
 
     var glassesStatusDetail = "Meta AI에서 Lumi를 등록한 뒤 안경을 착용해주세요."
 
@@ -169,7 +170,7 @@ final class LumiViewModel {
                     self.isRegistering = false
                 }
                 self.glassesStatusDetail = devices.isEmpty
-                    ? "안경을 착용하고 Bluetooth 연결을 확인해주세요."
+                    ? "안경을 연결하면 카메라를 쓸 수 있어요. 음성 대화는 iPhone 또는 Bluetooth 기기로 계속할 수 있어요."
                     : "음성 질문과 장면 보기를 사용할 수 있어요."
             }
         }
@@ -658,13 +659,14 @@ final class LumiViewModel {
     }
 
     private func startVoiceQuestion() {
-        guard !isBusy, isGlassesAvailable else { return }
+        guard !isBusy else { return }
         isStartingVoice = true
 
         Task {
             defer { isStartingVoice = false }
             do {
-                try await voiceRecorder.prepareForRecording()
+                let destination = try await voiceRecorder.prepareForRecording()
+                voiceAudioDestination = destination.displayName
                 interactionSounds.play(.recordingStarted)
                 try await Task.sleep(for: LumiInteractionSound.recordingStarted.playbackDelay)
                 try voiceRecorder.startPreparedRecording()

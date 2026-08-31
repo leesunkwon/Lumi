@@ -6,50 +6,76 @@
 import AVFoundation
 import Foundation
 
-enum GlassesAudioRouteError: LocalizedError {
-    case glassesMicrophoneUnavailable
-    case glassesMicrophoneNotSelected
-    case glassesOutputNotSelected
+enum LumiAudioDestination: Equatable {
+    case glasses(String)
+    case bluetooth(String)
+    case iPhone
 
-    var errorDescription: String? {
+    var displayName: String {
         switch self {
-        case .glassesMicrophoneUnavailable:
-            return "Ray-Ban Meta 마이크를 찾지 못했습니다. 안경이 iPhone Bluetooth에 연결되어 있는지 확인해주세요."
-        case .glassesMicrophoneNotSelected:
-            return "안경 마이크로 전환하지 못했습니다. 다른 Bluetooth 오디오 기기를 끄고 다시 시도해주세요."
-        case .glassesOutputNotSelected:
-            return "안경 스피커로 전환하지 못했습니다. iPhone의 오디오 출력에서 Ray-Ban Meta를 선택해주세요."
+        case .glasses(let name), .bluetooth(let name):
+            return name
+        case .iPhone:
+            return "iPhone"
         }
     }
 }
 
 @MainActor
-enum GlassesAudioRoute {
-    static func activate() async throws {
+enum LumiAudioRoute {
+    static func activate() async throws -> LumiAudioDestination {
         let audioSession = AVAudioSession.sharedInstance()
 
         try audioSession.setCategory(
             .playAndRecord,
             mode: .voiceChat,
-            options: [.allowBluetoothHFP]
+            options: [.allowBluetoothHFP, .defaultToSpeaker]
         )
         try audioSession.setActive(true)
 
-        guard let glassesPort = audioSession.availableInputs?.first(where: isGlassesPort) else {
-            throw GlassesAudioRouteError.glassesMicrophoneUnavailable
+        if let glassesPort = audioSession.availableInputs?.first(where: isGlassesPort),
+           await selectHandsFreeDevice(glassesPort, in: audioSession) {
+            return .glasses(glassesPort.portName)
         }
 
-        try audioSession.setPreferredInput(glassesPort)
-        try await Task.sleep(for: .milliseconds(250))
-
-        let selectedPort = audioSession.currentRoute.inputs.first
-        guard selectedPort?.portType == .bluetoothHFP, selectedPort?.uid == glassesPort.uid else {
-            throw GlassesAudioRouteError.glassesMicrophoneNotSelected
+        if let bluetoothPort = audioSession.availableInputs?.first(where: isBluetoothHandsFreePort),
+           await selectHandsFreeDevice(bluetoothPort, in: audioSession) {
+            return .bluetooth(bluetoothPort.portName)
         }
 
-        guard audioSession.currentRoute.outputs.contains(where: isGlassesPort) else {
-            throw GlassesAudioRouteError.glassesOutputNotSelected
+        // 통화용 Bluetooth 기기가 없으면 iOS가 iPhone의 내장 입·출력 경로를 선택하게 둡니다.
+        try audioSession.setPreferredInput(nil)
+        try await Task.sleep(for: .milliseconds(100))
+        return currentDestination(in: audioSession)
+    }
+
+    private static func selectHandsFreeDevice(
+        _ port: AVAudioSessionPortDescription,
+        in audioSession: AVAudioSession
+    ) async -> Bool {
+        do {
+            try audioSession.setPreferredInput(port)
+            try await Task.sleep(for: .milliseconds(250))
+
+            let currentInput = audioSession.currentRoute.inputs.first
+            return currentInput?.portType == .bluetoothHFP
+                && currentInput?.uid == port.uid
+                && audioSession.currentRoute.outputs.contains(where: isBluetoothHandsFreePort)
+        } catch {
+            return false
         }
+    }
+
+    private static func currentDestination(in audioSession: AVAudioSession) -> LumiAudioDestination {
+        if let glassesPort = audioSession.currentRoute.outputs.first(where: isGlassesPort) {
+            return .glasses(glassesPort.portName)
+        }
+
+        if let bluetoothPort = audioSession.currentRoute.outputs.first(where: isBluetoothPort) {
+            return .bluetooth(bluetoothPort.portName)
+        }
+
+        return .iPhone
     }
 
     private static func isGlassesPort(_ port: AVAudioSessionPortDescription) -> Bool {
@@ -57,5 +83,13 @@ enum GlassesAudioRoute {
 
         let name = port.portName.lowercased()
         return name.contains("ray-ban") || name.contains("meta") || name.contains("oakley")
+    }
+
+    private static func isBluetoothPort(_ port: AVAudioSessionPortDescription) -> Bool {
+        [.bluetoothHFP, .bluetoothA2DP, .bluetoothLE].contains(port.portType)
+    }
+
+    private static func isBluetoothHandsFreePort(_ port: AVAudioSessionPortDescription) -> Bool {
+        port.portType == .bluetoothHFP
     }
 }

@@ -610,18 +610,17 @@ struct ContentView: View {
             } else {
                 Button(action: performVoiceAction) {
                     HStack(spacing: SeedSpacing.x2) {
-                        if viewModel.isRegistering {
-                            ProgressView()
-                                .tint(SeedColor.fgSubtle)
-                        } else {
-                            Image(systemName: "link")
-                        }
-                        Text(viewModel.isRegistering ? "연결 중" : "안경 연결")
+                        Image(systemName: voiceActionSymbol)
+                        Text(voiceButtonTitle)
                     }
                 }
                 .buttonStyle(SeedActionButtonStyle(variant: .neutralSolid))
-                .disabled(viewModel.isRegistering)
-                .accessibilityHint("Meta AI 앱에서 Lumi와 안경의 연결을 시작합니다.")
+                .disabled(isVoiceActionDisabled)
+                .accessibilityHint(voiceButtonAccessibilityHint)
+
+                Text("안경이 없으면 \(viewModel.voiceAudioDestination) 또는 현재 연결된 Bluetooth 오디오 기기로 대화해요.")
+                    .font(SeedTypography.caption)
+                    .foregroundStyle(SeedColor.fgSubtle)
             }
 
             if isExperimentalKeyboardInputEnabled {
@@ -1519,11 +1518,7 @@ struct ContentView: View {
     }
 
     private func performVoiceAction() {
-        if viewModel.isGlassesAvailable {
-            viewModel.toggleVoiceQuestion()
-        } else {
-            viewModel.connectGlasses()
-        }
+        viewModel.toggleVoiceQuestion()
     }
 
     private func performSceneAction() {
@@ -1571,9 +1566,7 @@ struct ContentView: View {
         if viewModel.isStartingVoice { return "준비 중" }
         if viewModel.isSpeaking { return "재생 중" }
         if viewModel.isProcessing { return "답변 준비 중" }
-        if viewModel.isRegistering { return "연결 중" }
-        if viewModel.isGlassesAvailable { return "음성 질문" }
-        return "안경 연결 시작"
+        return "음성 질문"
     }
 
     private var voiceActionSymbol: String {
@@ -1596,8 +1589,8 @@ struct ContentView: View {
 
     private var voiceButtonAccessibilityHint: String {
         if viewModel.isRecording { return "녹음을 멈추고 질문을 Gemini에 전송합니다." }
-        if viewModel.isGlassesAvailable { return "안경 마이크로 음성 녹음을 시작합니다." }
-        return "Meta AI 앱에서 Lumi와 안경의 연결을 시작합니다."
+        if viewModel.isGlassesAvailable { return "안경 마이크를 우선 사용해 음성 녹음을 시작합니다." }
+        return "iPhone 또는 현재 연결된 Bluetooth 오디오 기기로 음성 녹음을 시작합니다."
     }
 
     private var sceneButtonTitle: String {

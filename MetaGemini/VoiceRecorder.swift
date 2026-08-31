@@ -24,12 +24,12 @@ enum VoiceRecorderError: LocalizedError {
 final class VoiceRecorder {
     private var recorder: AVAudioRecorder?
 
-    func prepareForRecording() async throws {
+    func prepareForRecording() async throws -> LumiAudioDestination {
         guard await hasRecordPermission() else {
             throw VoiceRecorderError.microphonePermissionDenied
         }
 
-        try await GlassesAudioRoute.activate()
+        return try await LumiAudioRoute.activate()
     }
 
     func startPreparedRecording() throws {
@@ -87,7 +87,7 @@ final class SpeechOutput {
     private var player: AVAudioPlayer?
 
     func speak(_ speech: SynthesizedSpeech) async throws {
-        try await GlassesAudioRoute.activate()
+        _ = try await LumiAudioRoute.activate()
 
         player?.stop()
 
@@ -126,7 +126,7 @@ private enum SpeechOutputError: LocalizedError {
         case .unsupportedAudioFormat:
             return "Gemini 음성 데이터 형식을 재생할 수 없습니다."
         case .playbackFailed:
-            return "안경에서 Gemini 음성 답변을 재생하지 못했습니다."
+            return "선택된 오디오 기기에서 Gemini 음성 답변을 재생하지 못했습니다."
         }
     }
 }
