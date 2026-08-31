@@ -958,6 +958,41 @@ final class LumiViewModel {
                 conversationID: conversationID
             )
 
+        case .deleteUserMemory:
+            guard let memory = resolvedUserMemoryDeletion(result.userMemoryDeletion) else {
+                let clarificationResult = AssistantResult(
+                    transcript: result.transcript,
+                    answer: "삭제할 사용자 메모리를 정확히 찾지 못했어요. 메모 제목이나 내용을 조금 더 알려주세요.",
+                    userMemory: nil,
+                    shouldSaveUserMemory: false,
+                    action: .answer,
+                    timeDetail: nil,
+                    weatherDetail: nil
+                )
+                try await deliver(
+                    clarificationResult,
+                    fallbackUserMessage: fallbackUserMessage,
+                    conversationID: conversationID
+                )
+                return
+            }
+
+            deleteUserMemory(id: memory.id)
+            let deletionResult = AssistantResult(
+                transcript: result.transcript,
+                answer: "‘\(memory.title)’ 메모리를 삭제했어요.",
+                userMemory: nil,
+                shouldSaveUserMemory: false,
+                action: .answer,
+                timeDetail: nil,
+                weatherDetail: nil
+            )
+            try await deliver(
+                deletionResult,
+                fallbackUserMessage: fallbackUserMessage,
+                conversationID: conversationID
+            )
+
         case .createSchedule:
             guard let draft = result.scheduleDetail,
                   let scheduledAt = scheduleDate(from: draft),
@@ -1386,6 +1421,13 @@ final class LumiViewModel {
         )
     }
 
+    private func resolvedUserMemoryDeletion(
+        _ draft: UserMemoryDeleteDraft?
+    ) -> VoiceMemo? {
+        guard let draft else { return nil }
+        return memos.first { $0.id == draft.memoryID }
+    }
+
     private func actionConfirmationKind(
         for result: AssistantResult,
         userMessage: String
@@ -1400,6 +1442,11 @@ final class LumiViewModel {
                 return nil
             }
             return .updateUserMemory(existing: update.existing, updated: update.updated)
+        case .deleteUserMemory:
+            guard let memory = resolvedUserMemoryDeletion(result.userMemoryDeletion) else {
+                return nil
+            }
+            return .deleteUserMemory(memory)
         case .createSchedule:
             guard let draft = result.scheduleDetail,
                   let scheduledAt = scheduleDate(from: draft),
