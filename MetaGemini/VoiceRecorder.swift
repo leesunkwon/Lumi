@@ -24,7 +24,7 @@ enum VoiceRecorderError: LocalizedError {
 final class VoiceRecorder {
     private var recorder: AVAudioRecorder?
 
-    func prepareForRecording() async throws -> LumiAudioDestination {
+    func prepareForRecording() async throws -> LumiAudioDeviceStatus {
         guard await hasRecordPermission() else {
             throw VoiceRecorderError.microphonePermissionDenied
         }
@@ -86,8 +86,11 @@ final class VoiceRecorder {
 final class SpeechOutput {
     private var player: AVAudioPlayer?
 
-    func speak(_ speech: SynthesizedSpeech) async throws {
-        _ = try await LumiAudioRoute.activate()
+    func speak(
+        _ speech: SynthesizedSpeech,
+        onRouteActivated: (LumiAudioDeviceStatus) -> Void
+    ) async throws {
+        onRouteActivated(try await LumiAudioRoute.activate())
 
         player?.stop()
 

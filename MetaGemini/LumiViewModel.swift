@@ -3,6 +3,7 @@
 //  MetaGemini
 //
 
+import AVFoundation
 import CoreLocation
 import Foundation
 import MWDATCore
@@ -32,7 +33,7 @@ final class LumiViewModel {
     var pendingAction: PendingLumiAction?
     var isShowingError = false
     var errorMessage = ""
-    var voiceAudioDestination = "안경 우선"
+    var audioDeviceStatus = LumiAudioDeviceStatus.checking
 
     var glassesStatusDetail = "Meta AI에서 Lumi를 등록한 뒤 안경을 착용해주세요."
 
@@ -117,6 +118,7 @@ final class LumiViewModel {
     @ObservationIgnored private var devicesTask: Task<Void, Never>?
     @ObservationIgnored private var waitingSoundTask: Task<Void, Never>?
     @ObservationIgnored private var timerCleanupTask: Task<Void, Never>?
+    @ObservationIgnored private var audioRouteTask: Task<Void, Never>?
 
     init(wearables: WearablesInterface, configurationError: String? = nil) {
         self.wearables = wearables
@@ -172,6 +174,17 @@ final class LumiViewModel {
                 self.glassesStatusDetail = devices.isEmpty
                     ? "안경을 연결하면 카메라를 쓸 수 있어요. 음성 대화는 iPhone 또는 Bluetooth 기기로 계속할 수 있어요."
                     : "음성 질문과 장면 보기를 사용할 수 있어요."
+                self.refreshAudioDeviceStatus()
+            }
+        }
+
+        refreshAudioDeviceStatus()
+        audioRouteTask = Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(
+                named: AVAudioSession.routeChangeNotification
+            ) {
+                guard !Task.isCancelled else { return }
+                self?.refreshAudioDeviceStatus()
             }
         }
 
@@ -196,6 +209,7 @@ final class LumiViewModel {
         devicesTask?.cancel()
         waitingSoundTask?.cancel()
         timerCleanupTask?.cancel()
+        audioRouteTask?.cancel()
     }
 
     func connectGlasses() {
@@ -651,6 +665,10 @@ final class LumiViewModel {
         isShowingError = false
     }
 
+    func refreshAudioDeviceStatus() {
+        audioDeviceStatus = LumiAudioRoute.currentDeviceStatus()
+    }
+
     func clearMemoryFilters() {
         memoSearchQuery = ""
         selectedMemoryCategory = nil
@@ -665,8 +683,7 @@ final class LumiViewModel {
         Task {
             defer { isStartingVoice = false }
             do {
-                let destination = try await voiceRecorder.prepareForRecording()
-                voiceAudioDestination = destination.displayName
+                audioDeviceStatus = try await voiceRecorder.prepareForRecording()
                 interactionSounds.play(.recordingStarted)
                 try await Task.sleep(for: LumiInteractionSound.recordingStarted.playbackDelay)
                 try voiceRecorder.startPreparedRecording()
@@ -1272,7 +1289,9 @@ final class LumiViewModel {
     private func playSpeech(_ speech: SynthesizedSpeech) async throws {
         isSpeaking = true
         defer { isSpeaking = false }
-        try await speechOutput.speak(speech)
+        try await speechOutput.speak(speech) { [weak self] status in
+            self?.audioDeviceStatus = status
+        }
     }
 
     private func startWaitingSounds(after delay: Duration = .milliseconds(360)) {

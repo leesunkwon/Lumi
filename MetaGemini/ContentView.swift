@@ -165,7 +165,9 @@ struct ContentView: View {
             LumiSettingsView(
                 canConnectGlasses: !viewModel.isGlassesAvailable,
                 isConnectingGlasses: viewModel.isRegistering,
+                audioDeviceStatus: viewModel.audioDeviceStatus,
                 onConnectGlasses: viewModel.connectGlasses,
+                onRefreshAudioDevices: viewModel.refreshAudioDeviceStatus,
                 onShowIntroduction: {
                     isShowingSettings = false
                     hasSeenIntro = false
@@ -618,7 +620,7 @@ struct ContentView: View {
                 .disabled(isVoiceActionDisabled)
                 .accessibilityHint(voiceButtonAccessibilityHint)
 
-                Text("안경이 없으면 \(viewModel.voiceAudioDestination) 또는 현재 연결된 Bluetooth 오디오 기기로 대화해요.")
+                Text("안경이 없으면 iPhone 또는 현재 연결된 Bluetooth 오디오 기기로 대화해요.")
                     .font(SeedTypography.caption)
                     .foregroundStyle(SeedColor.fgSubtle)
             }
@@ -1613,7 +1615,9 @@ struct ContentView: View {
 private struct LumiSettingsView: View {
     let canConnectGlasses: Bool
     let isConnectingGlasses: Bool
+    let audioDeviceStatus: LumiAudioDeviceStatus
     let onConnectGlasses: () -> Void
+    let onRefreshAudioDevices: () -> Void
     let onShowIntroduction: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1635,6 +1639,34 @@ private struct LumiSettingsView: View {
                     Toggle("키보드 입력", isOn: $isExperimentalKeyboardInputEnabled)
 
                     Text("안경 마이크를 사용하지 않고 iPhone 키보드로 현재 대화에 질문을 보낼 수 있어요.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("오디오 기기 상태") {
+                    LabeledContent {
+                        Text(audioDeviceStatus.microphone)
+                            .foregroundStyle(SeedColor.fgMuted)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("마이크", systemImage: "mic.fill")
+                    }
+
+                    LabeledContent {
+                        Text(audioDeviceStatus.speaker)
+                            .foregroundStyle(SeedColor.fgMuted)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("스피커", systemImage: "speaker.wave.2.fill")
+                    }
+
+                    Button {
+                        onRefreshAudioDevices()
+                    } label: {
+                        Label("기기 상태 새로고침", systemImage: "arrow.clockwise")
+                    }
+
+                    Text("안경·Bluetooth 기기의 연결 상태가 바뀌면 Lumi의 오디오 경로도 자동으로 갱신돼요.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -1667,6 +1699,7 @@ private struct LumiSettingsView: View {
             }
             .navigationTitle("설정")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear(perform: onRefreshAudioDevices)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("완료") {

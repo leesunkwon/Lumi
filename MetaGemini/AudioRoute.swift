@@ -6,24 +6,19 @@
 import AVFoundation
 import Foundation
 
-enum LumiAudioDestination: Equatable {
-    case glasses(String)
-    case bluetooth(String)
-    case iPhone
+struct LumiAudioDeviceStatus: Equatable {
+    let microphone: String
+    let speaker: String
 
-    var displayName: String {
-        switch self {
-        case .glasses(let name), .bluetooth(let name):
-            return name
-        case .iPhone:
-            return "iPhone"
-        }
-    }
+    static let checking = LumiAudioDeviceStatus(
+        microphone: "확인 중",
+        speaker: "확인 중"
+    )
 }
 
 @MainActor
 enum LumiAudioRoute {
-    static func activate() async throws -> LumiAudioDestination {
+    static func activate() async throws -> LumiAudioDeviceStatus {
         let audioSession = AVAudioSession.sharedInstance()
 
         try audioSession.setCategory(
@@ -35,18 +30,22 @@ enum LumiAudioRoute {
 
         if let glassesPort = audioSession.availableInputs?.first(where: isGlassesPort),
            await selectHandsFreeDevice(glassesPort, in: audioSession) {
-            return .glasses(glassesPort.portName)
+            return currentDeviceStatus(in: audioSession)
         }
 
         if let bluetoothPort = audioSession.availableInputs?.first(where: isBluetoothHandsFreePort),
            await selectHandsFreeDevice(bluetoothPort, in: audioSession) {
-            return .bluetooth(bluetoothPort.portName)
+            return currentDeviceStatus(in: audioSession)
         }
 
         // 통화용 Bluetooth 기기가 없으면 iOS가 iPhone의 내장 입·출력 경로를 선택하게 둡니다.
         try audioSession.setPreferredInput(nil)
         try await Task.sleep(for: .milliseconds(100))
-        return currentDestination(in: audioSession)
+        return currentDeviceStatus(in: audioSession)
+    }
+
+    static func currentDeviceStatus() -> LumiAudioDeviceStatus {
+        currentDeviceStatus(in: AVAudioSession.sharedInstance())
     }
 
     private static func selectHandsFreeDevice(
@@ -66,16 +65,13 @@ enum LumiAudioRoute {
         }
     }
 
-    private static func currentDestination(in audioSession: AVAudioSession) -> LumiAudioDestination {
-        if let glassesPort = audioSession.currentRoute.outputs.first(where: isGlassesPort) {
-            return .glasses(glassesPort.portName)
-        }
-
-        if let bluetoothPort = audioSession.currentRoute.outputs.first(where: isBluetoothPort) {
-            return .bluetooth(bluetoothPort.portName)
-        }
-
-        return .iPhone
+    private static func currentDeviceStatus(in audioSession: AVAudioSession) -> LumiAudioDeviceStatus {
+        let input = audioSession.currentRoute.inputs.first
+        let output = audioSession.currentRoute.outputs.first
+        return LumiAudioDeviceStatus(
+            microphone: input.map { displayName(for: $0, role: .microphone) } ?? "사용 가능한 마이크 없음",
+            speaker: output.map { displayName(for: $0, role: .speaker) } ?? "사용 가능한 스피커 없음"
+        )
     }
 
     private static func isGlassesPort(_ port: AVAudioSessionPortDescription) -> Bool {
@@ -91,5 +87,34 @@ enum LumiAudioRoute {
 
     private static func isBluetoothHandsFreePort(_ port: AVAudioSessionPortDescription) -> Bool {
         port.portType == .bluetoothHFP
+    }
+
+    private enum DeviceRole {
+        case microphone
+        case speaker
+    }
+
+    private static func displayName(
+        for port: AVAudioSessionPortDescription,
+        role: DeviceRole
+    ) -> String {
+        if isGlassesPort(port) {
+            return "Ray-Ban Meta"
+        }
+
+        if isBluetoothPort(port) {
+            return port.portName
+        }
+
+        switch (port.portType, role) {
+        case (.builtInMic, .microphone):
+            return "iPhone 내장 마이크"
+        case (.builtInSpeaker, .speaker):
+            return "iPhone 스피커"
+        case (.builtInReceiver, .speaker):
+            return "iPhone 수화부"
+        default:
+            return port.portName
+        }
     }
 }
