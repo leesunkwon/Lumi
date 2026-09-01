@@ -86,13 +86,18 @@ final class VoiceRecorder {
 final class SpeechOutput {
     private var player: AVAudioPlayer?
 
+    func stop() {
+        player?.stop()
+        player = nil
+    }
+
     func speak(
         _ speech: SynthesizedSpeech,
         onRouteActivated: (LumiAudioDeviceStatus) -> Void
     ) async throws {
         onRouteActivated(try await LumiAudioRoute.activate())
 
-        player?.stop()
+        stop()
 
         let audioData = try speech.playableAudioData()
         let player = try AVAudioPlayer(data: audioData)

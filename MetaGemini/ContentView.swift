@@ -1571,7 +1571,7 @@ struct ContentView: View {
     private var voiceButtonTitle: String {
         if viewModel.isRecording { return "질문 보내기" }
         if viewModel.isStartingVoice { return "준비 중" }
-        if viewModel.isSpeaking { return "재생 중" }
+        if viewModel.isSpeaking { return "말 끊고 질문" }
         if viewModel.isProcessing { return "답변 준비 중" }
         return "음성 질문"
     }
@@ -1582,20 +1582,20 @@ struct ContentView: View {
     }
 
     private var isVoiceActionLoading: Bool {
-        viewModel.isStartingVoice || viewModel.isProcessing || viewModel.isSpeaking || viewModel.isRegistering
+        viewModel.isStartingVoice || viewModel.isProcessing || viewModel.isRegistering
     }
 
     private var isVoiceActionDisabled: Bool {
         viewModel.isStartingVoice
             || viewModel.isProcessing
             || viewModel.isCapturingScene
-            || viewModel.isSpeaking
             || viewModel.isRegistering
             || viewModel.pendingAction != nil
     }
 
     private var voiceButtonAccessibilityHint: String {
         if viewModel.isRecording { return "녹음을 멈추고 질문을 Gemini에 전송합니다." }
+        if viewModel.isSpeaking { return "재생 중인 답변을 멈추고 새 음성 질문을 시작합니다." }
         if viewModel.isGlassesAvailable { return "안경 마이크를 우선 사용해 음성 녹음을 시작합니다." }
         return "iPhone 또는 현재 연결된 Bluetooth 오디오 기기로 음성 녹음을 시작합니다."
     }

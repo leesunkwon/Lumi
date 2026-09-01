@@ -241,6 +241,10 @@ final class LumiViewModel {
     func toggleVoiceQuestion() {
         if isRecording {
             finishVoiceQuestion()
+        } else if isSpeaking {
+            speechOutput.stop()
+            isSpeaking = false
+            startVoiceQuestion()
         } else {
             startVoiceQuestion()
         }
