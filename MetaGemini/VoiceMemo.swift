@@ -80,6 +80,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
     let category: UserMemoryCategory
     let photoFilename: String?
     let location: UserMemoryLocation?
+    let tags: [String]
+    let visualSummary: String?
     let createdAt: Date
 
     init(
@@ -89,6 +91,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         category: UserMemoryCategory = .general,
         photoFilename: String? = nil,
         location: UserMemoryLocation? = nil,
+        tags: [String] = [],
+        visualSummary: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
@@ -97,6 +101,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         self.category = category
         self.photoFilename = photoFilename
         self.location = location
+        self.tags = Self.normalizedTags(tags)
+        self.visualSummary = visualSummary?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.createdAt = createdAt
     }
 
@@ -107,6 +113,8 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         case category
         case photoFilename
         case location
+        case tags
+        case visualSummary
         case createdAt
     }
 
@@ -120,6 +128,10 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         )
         photoFilename = try container.decodeIfPresent(String.self, forKey: .photoFilename)
         location = try container.decodeIfPresent(UserMemoryLocation.self, forKey: .location)
+        tags = Self.normalizedTags(try container.decodeIfPresent([String].self, forKey: .tags) ?? [])
+        visualSummary = try container.decodeIfPresent(String.self, forKey: .visualSummary)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 
@@ -131,7 +143,28 @@ struct VoiceMemo: Codable, Identifiable, Hashable {
         try container.encode(category, forKey: .category)
         try container.encodeIfPresent(photoFilename, forKey: .photoFilename)
         try container.encodeIfPresent(location, forKey: .location)
+        try container.encode(tags, forKey: .tags)
+        try container.encodeIfPresent(visualSummary, forKey: .visualSummary)
         try container.encode(createdAt, forKey: .createdAt)
+    }
+
+    static func normalizedTags(_ tags: [String]) -> [String] {
+        var normalized: [String] = []
+        var seen: Set<String> = []
+
+        for tag in tags {
+            let value = tag
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+                .replacingOccurrences(of: " ", with: "")
+            guard !value.isEmpty else { continue }
+            let key = value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seen.insert(key).inserted else { continue }
+            normalized.append(String(value.prefix(24)))
+            if normalized.count == 8 { break }
+        }
+
+        return normalized
     }
 }
 
@@ -147,23 +180,39 @@ struct UserMemoryLocation: Codable, Hashable {
     var mapURL: URL? {
         URL(string: "http://maps.apple.com/?ll=\(latitude),\(longitude)")
     }
+
+    var directionsURL: URL? {
+        URL(string: "http://maps.apple.com/?daddr=\(latitude),\(longitude)&dirflg=d")
+    }
 }
 
 struct UserMemoryDraft: Codable {
     let title: String
     let body: String
     let category: UserMemoryCategory
+    let tags: [String]
+    let visualSummary: String?
 
     private enum CodingKeys: String, CodingKey {
         case title
         case body
         case category
+        case tags
+        case visualSummary
     }
 
-    init(title: String, body: String, category: UserMemoryCategory = .general) {
+    init(
+        title: String,
+        body: String,
+        category: UserMemoryCategory = .general,
+        tags: [String] = [],
+        visualSummary: String? = nil
+    ) {
         self.title = title
         self.body = body
         self.category = category
+        self.tags = VoiceMemo.normalizedTags(tags)
+        self.visualSummary = visualSummary?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     init(from decoder: Decoder) throws {
@@ -173,6 +222,8 @@ struct UserMemoryDraft: Codable {
         category = UserMemoryCategory.resolved(
             from: try container.decodeIfPresent(String.self, forKey: .category)
         )
+        tags = VoiceMemo.normalizedTags(try container.decodeIfPresent([String].self, forKey: .tags) ?? [])
+        visualSummary = try container.decodeIfPresent(String.self, forKey: .visualSummary)?.nilIfEmpty
     }
 
     func encode(to encoder: Encoder) throws {
@@ -180,5 +231,13 @@ struct UserMemoryDraft: Codable {
         try container.encode(title, forKey: .title)
         try container.encode(body, forKey: .body)
         try container.encode(category, forKey: .category)
+        try container.encode(tags, forKey: .tags)
+        try container.encodeIfPresent(visualSummary, forKey: .visualSummary)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

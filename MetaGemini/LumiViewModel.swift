@@ -8,6 +8,7 @@ import CoreLocation
 import Foundation
 import MWDATCore
 import Observation
+import UIKit
 
 @Observable
 @MainActor
@@ -21,6 +22,7 @@ final class LumiViewModel {
     var isSpeaking = false
     var lastTranscript: String?
     var lastAnswer: String?
+    var lastReferencedMemoryIDs: [UUID] = []
     var conversations: [ConversationSession] = []
     var activeConversationID: UUID?
     var memoSearchQuery = ""
@@ -35,6 +37,10 @@ final class LumiViewModel {
     var isShowingError = false
     var errorMessage = ""
     var audioDeviceStatus = LumiAudioDeviceStatus.checking
+    var isIndexingMemoryPhotos = false
+    var memoryPhotoIndexCompleted = 0
+    var memoryPhotoIndexTotal = 0
+    var memoryPhotoIndexFailureCount = 0
 
     var glassesStatusDetail = "Meta AI에서 Lumi를 등록한 뒤 안경을 착용해주세요."
 
@@ -69,6 +75,18 @@ final class LumiViewModel {
         return filteredMemos.sorted {
             memoryTimelineDate(for: $0) > memoryTimelineDate(for: $1)
         }
+    }
+
+    var filteredPhotoMemos: [VoiceMemo] {
+        filteredMemos.filter { $0.category != .schedule && $0.photoFilename != nil }
+    }
+
+    var unindexedPhotoMemoryCount: Int {
+        memos.filter { $0.photoFilename != nil && $0.visualSummary == nil }.count
+    }
+
+    var lastReferencedMemories: [VoiceMemo] {
+        lastReferencedMemoryIDs.compactMap(memory(withID:))
     }
 
     var hasMemoryRecords: Bool {
@@ -146,8 +164,13 @@ final class LumiViewModel {
            self.conversations.contains(where: { $0.id == storedActiveConversationID }) {
             self.activeConversationID = storedActiveConversationID
         } else {
-        self.activeConversationID = self.conversations.first?.id
+            self.activeConversationID = self.conversations.first?.id
         }
+
+        self.lastReferencedMemoryIDs = self.conversation(for: self.activeConversationID)?
+            .messages
+            .last(where: { $0.role == .assistant })?
+            .memoryReferenceIDs ?? []
 
         if self.memos != storedMemos {
             saveUserMemories()
@@ -369,7 +392,8 @@ final class LumiViewModel {
                     result,
                     fallbackUserMessage: fallbackUserMessage,
                     conversationID: conversationID,
-                    scenePhotoData: photoData
+                    scenePhotoData: photoData,
+                    userMemoryPhotoData: result.shouldSaveUserMemory ? photoData : nil
                 )
             } catch {
                 isCapturingScene = false
@@ -392,6 +416,15 @@ final class LumiViewModel {
     }
 
     func addUserMemory(title: String, body: String, category: UserMemoryCategory) {
+        addUserMemory(title: title, body: body, category: category, tags: [])
+    }
+
+    func addUserMemory(
+        title: String,
+        body: String,
+        category: UserMemoryCategory,
+        tags: [String]
+    ) {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard category != .schedule, !normalizedTitle.isEmpty, !normalizedBody.isEmpty else { return }
@@ -404,7 +437,8 @@ final class LumiViewModel {
                     title: normalizedTitle,
                     body: normalizedBody,
                     category: category,
-                    location: location
+                    location: location,
+                    tags: tags
                 )
             )
         }
@@ -414,7 +448,8 @@ final class LumiViewModel {
         id: UUID,
         title: String,
         body: String,
-        category: UserMemoryCategory
+        category: UserMemoryCategory,
+        tags: [String]? = nil
     ) {
         guard let existingMemory = memos.first(where: { $0.id == id }) else { return }
 
@@ -431,6 +466,8 @@ final class LumiViewModel {
                 category: category,
                 photoFilename: existingMemory.photoFilename,
                 location: existingMemory.location,
+                tags: tags ?? existingMemory.tags,
+                visualSummary: existingMemory.visualSummary,
                 createdAt: existingMemory.createdAt
             )
         )
@@ -659,6 +696,7 @@ final class LumiViewModel {
         activeConversationID = conversation.id
         lastTranscript = nil
         lastAnswer = nil
+        lastReferencedMemoryIDs = []
         saveConversations()
         return conversation.id
     }
@@ -668,12 +706,73 @@ final class LumiViewModel {
         activeConversationID = id
         lastTranscript = conversation.messages.last(where: { $0.role == .user })?.text
         lastAnswer = conversation.messages.last(where: { $0.role == .assistant })?.text
+        lastReferencedMemoryIDs = conversation.messages.last(where: { $0.role == .assistant })?.memoryReferenceIDs ?? []
         saveConversations()
     }
 
     func conversation(for id: UUID?) -> ConversationSession? {
         guard let id else { return nil }
         return conversations.first { $0.id == id }
+    }
+
+    func memory(withID id: UUID) -> VoiceMemo? {
+        memos.first { $0.id == id }
+    }
+
+    func referencedMemories(for message: ConversationMessage) -> [VoiceMemo] {
+        message.memoryReferenceIDs.compactMap(memory(withID:))
+    }
+
+    func analyzeExistingMemoryPhotos() {
+        guard !isIndexingMemoryPhotos else { return }
+        let targets = memos.filter { $0.photoFilename != nil && $0.visualSummary == nil }
+        guard !targets.isEmpty else { return }
+
+        isIndexingMemoryPhotos = true
+        memoryPhotoIndexCompleted = 0
+        memoryPhotoIndexTotal = targets.count
+        memoryPhotoIndexFailureCount = 0
+
+        Task { [weak self] in
+            guard let self else { return }
+            for target in targets {
+                defer { self.memoryPhotoIndexCompleted += 1 }
+                guard let filename = target.photoFilename,
+                      let imageData = UserMemoryPhotoStore.image(for: filename)?.jpegData(compressionQuality: 0.88)
+                else {
+                    self.memoryPhotoIndexFailureCount += 1
+                    continue
+                }
+
+                do {
+                    let analysis = try await self.gemini.analyzeMemoryPhoto(
+                        imageData: imageData,
+                        request: "기존 사용자 메모리 사진을 검색 가능하게 분석해줘.",
+                        title: target.title,
+                        body: target.body,
+                        category: target.category,
+                        locationDescription: target.location?.displayName
+                    )
+                    guard let current = self.memos.first(where: { $0.id == target.id }) else { continue }
+                    self.saveUserMemory(
+                        VoiceMemo(
+                            id: current.id,
+                            title: current.title,
+                            body: current.body,
+                            category: current.category,
+                            photoFilename: current.photoFilename,
+                            location: current.location,
+                            tags: current.tags + analysis.tags,
+                            visualSummary: analysis.visualSummary,
+                            createdAt: current.createdAt
+                        )
+                    )
+                } catch {
+                    self.memoryPhotoIndexFailureCount += 1
+                }
+            }
+            self.isIndexingMemoryPhotos = false
+        }
     }
 
     func dismissError() {
@@ -887,7 +986,8 @@ final class LumiViewModel {
                 visualResult,
                 fallbackUserMessage: fallbackUserMessage,
                 conversationID: conversationID,
-                scenePhotoData: photoData
+                scenePhotoData: photoData,
+                userMemoryPhotoData: visualResult.shouldSaveUserMemory ? photoData : nil
             )
 
         case .weather:
@@ -917,13 +1017,31 @@ final class LumiViewModel {
             let location = try await locationProvider.currentLocation()
             currentMemoryLocation = location
             let memoryLocation = await userMemoryLocation(from: location)
+            let fallbackDraft = result.userMemory ?? UserMemoryDraft(
+                title: "저장한 장소",
+                body: memoryLocation.displayName,
+                category: .place
+            )
+            let photoAnalysis = try? await gemini.analyzeMemoryPhoto(
+                imageData: photoData,
+                request: fallbackUserMessage,
+                title: fallbackDraft.title,
+                body: fallbackDraft.body,
+                category: .place,
+                locationDescription: memoryLocation.displayName
+            )
+            let hasUserSpecifiedName = result.userMemory != nil
             let placeResult = AssistantResult(
                 transcript: result.transcript,
                 answer: "이곳을 장소 메모리에 저장했어요.",
                 userMemory: UserMemoryDraft(
-                    title: "저장한 장소",
-                    body: memoryLocation.displayName,
-                    category: .place
+                    title: hasUserSpecifiedName
+                        ? fallbackDraft.title
+                        : (photoAnalysis?.suggestedTitle ?? fallbackDraft.title),
+                    body: fallbackDraft.body,
+                    category: .place,
+                    tags: fallbackDraft.tags + (photoAnalysis?.tags ?? []),
+                    visualSummary: photoAnalysis?.visualSummary
                 ),
                 shouldSaveUserMemory: true,
                 action: .answer,
@@ -952,13 +1070,26 @@ final class LumiViewModel {
                 body: memoryLocation.displayName,
                 category: .parking
             )
+            let photoAnalysis = try? await gemini.analyzeMemoryPhoto(
+                imageData: photoData,
+                request: fallbackUserMessage,
+                title: parkingDraft.title,
+                body: parkingDraft.body,
+                category: .parking,
+                locationDescription: memoryLocation.displayName
+            )
+            let hasUserSpecifiedName = result.userMemory != nil
             let parkingResult = AssistantResult(
                 transcript: result.transcript,
                 answer: "주차 위치를 사진과 위치 정보로 저장했어요.",
                 userMemory: UserMemoryDraft(
-                    title: parkingDraft.title,
+                    title: hasUserSpecifiedName
+                        ? parkingDraft.title
+                        : (photoAnalysis?.suggestedTitle ?? parkingDraft.title),
                     body: parkingDraft.body,
-                    category: .parking
+                    category: .parking,
+                    tags: parkingDraft.tags + (photoAnalysis?.tags ?? []),
+                    visualSummary: photoAnalysis?.visualSummary
                 ),
                 shouldSaveUserMemory: true,
                 action: .answer,
@@ -997,7 +1128,8 @@ final class LumiViewModel {
                 id: update.existing.id,
                 title: update.updated.title,
                 body: update.updated.body,
-                category: update.updated.category
+                category: update.updated.category,
+                tags: update.updated.tags
             )
             let updateResult = AssistantResult(
                 transcript: result.transcript,
@@ -1370,16 +1502,19 @@ final class LumiViewModel {
         let transcript = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
         let userMessage = (transcript?.isEmpty == false ? transcript : nil) ?? fallbackUserMessage
         let photoFilename = scenePhotoData.flatMap { try? ConversationPhotoStore.save($0) }
+        let validReferenceIDs = validatedMemoryReferenceIDs(result.memoryReferenceIDs)
         appendConversationTurn(
             userMessage: userMessage,
             assistantMessage: result.answer,
             conversationID: conversationID,
-            photoFilename: photoFilename
+            photoFilename: photoFilename,
+            memoryReferenceIDs: validReferenceIDs
         )
 
         if activeConversationID == conversationID {
             lastTranscript = transcript
             lastAnswer = result.answer
+            lastReferencedMemoryIDs = validReferenceIDs
         }
 
         let hasExplicitMemoryRequest = hasExplicitUserMemorySaveRequest(in: userMessage)
@@ -1399,7 +1534,9 @@ final class LumiViewModel {
                     body: userMemory.body,
                     category: userMemory.category,
                     photoFilename: userMemoryPhotoFilename,
-                    location: memoryLocation
+                    location: memoryLocation,
+                    tags: userMemory.tags,
+                    visualSummary: userMemory.visualSummary
                 )
             )
         }
@@ -1501,7 +1638,13 @@ final class LumiViewModel {
 
         return (
             existing,
-            UserMemoryDraft(title: title, body: body, category: draft.category)
+            UserMemoryDraft(
+                title: title,
+                body: body,
+                category: draft.category,
+                tags: draft.tags ?? existing.tags,
+                visualSummary: existing.visualSummary
+            )
         )
     }
 
@@ -1572,7 +1715,8 @@ final class LumiViewModel {
         userMessage: String,
         assistantMessage: String,
         conversationID: UUID?,
-        photoFilename: String?
+        photoFilename: String?,
+        memoryReferenceIDs: [UUID]
     ) {
         guard let conversationID,
               let index = conversations.firstIndex(where: { $0.id == conversationID })
@@ -1589,7 +1733,11 @@ final class LumiViewModel {
             )
         )
         conversation.messages.append(
-            ConversationMessage(role: .assistant, text: assistantMessage)
+            ConversationMessage(
+                role: .assistant,
+                text: assistantMessage,
+                memoryReferenceIDs: memoryReferenceIDs
+            )
         )
         conversation.updatedAt = .now
 
@@ -1600,6 +1748,12 @@ final class LumiViewModel {
         conversations[index] = conversation
         conversations.sort { $0.updatedAt > $1.updatedAt }
         saveConversations()
+    }
+
+    private func validatedMemoryReferenceIDs(_ candidateIDs: [UUID]) -> [UUID] {
+        let validIDs = Set(memos.map(\.id))
+        var seen: Set<UUID> = []
+        return candidateIDs.filter { validIDs.contains($0) && seen.insert($0).inserted }.prefix(5).map { $0 }
     }
 
     private func conversationTitle(for text: String) -> String {
@@ -1683,7 +1837,9 @@ final class LumiViewModel {
             memory.body,
             memory.category.title,
             memory.location?.displayName ?? "",
-            memory.location.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? ""
+            memory.location.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? "",
+            memory.tags.joined(separator: " "),
+            memory.visualSummary ?? ""
         ]
 
         return searchableValues.contains { $0.localizedCaseInsensitiveContains(query) }
@@ -1709,6 +1865,8 @@ final class LumiViewModel {
                 category: .general,
                 photoFilename: memory.photoFilename,
                 location: memory.location,
+                tags: memory.tags,
+                visualSummary: memory.visualSummary,
                 createdAt: memory.createdAt
             )
         }

@@ -37,6 +37,7 @@ struct AssistantResult {
     let weatherDetail: WeatherRequest?
     let scheduleDetail: ScheduleDraft?
     let timerDetail: TimerDraft?
+    let memoryReferenceIDs: [UUID]
 
     init(
         transcript: String?,
@@ -49,7 +50,8 @@ struct AssistantResult {
         timeDetail: TimeDetail?,
         weatherDetail: WeatherRequest?,
         scheduleDetail: ScheduleDraft? = nil,
-        timerDetail: TimerDraft? = nil
+        timerDetail: TimerDraft? = nil,
+        memoryReferenceIDs: [UUID] = []
     ) {
         self.transcript = transcript
         self.answer = answer
@@ -62,6 +64,7 @@ struct AssistantResult {
         self.weatherDetail = weatherDetail
         self.scheduleDetail = scheduleDetail
         self.timerDetail = timerDetail
+        self.memoryReferenceIDs = Array(memoryReferenceIDs.prefix(5))
     }
 }
 
@@ -107,12 +110,14 @@ struct UserMemoryUpdateDraft: Decodable {
     let title: String
     let body: String
     let category: UserMemoryCategory
+    let tags: [String]?
 
     private enum CodingKeys: String, CodingKey {
         case memoryID
         case title
         case body
         case category
+        case tags
     }
 
     init(from decoder: Decoder) throws {
@@ -123,7 +128,14 @@ struct UserMemoryUpdateDraft: Decodable {
         category = UserMemoryCategory.resolved(
             from: try container.decodeIfPresent(String.self, forKey: .category)
         )
+        tags = try container.decodeIfPresent([String].self, forKey: .tags)
     }
+}
+
+struct UserMemoryPhotoAnalysis {
+    let suggestedTitle: String
+    let tags: [String]
+    let visualSummary: String
 }
 
 struct UserMemoryDeleteDraft: Decodable {
@@ -150,7 +162,7 @@ struct GeminiService {
             - capture_scene: 사용자가 지금 보고 있는 물건, 메뉴, 문서, 사람, 주변 장면처럼 새 사진을 찍어야만 답할 수 있는 내용을 분석해 달라고 요청한 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요.
             - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
             - weather: 사용자가 현재 위치의 날씨, 오늘·내일 날씨, 특정 시간대의 비·눈·기온을 물어본 경우입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. weatherDetail에는 대화 문맥을 반영해 day와 period를 채우세요. 예를 들어 “오늘 날씨 어때”는 today/day, “내일은?”은 tomorrow/day, “오늘 오후에 비 와?”는 today/afternoon, “지금 비 와?”는 today/current입니다. 다른 지역의 날씨는 이 동작을 사용하지 마세요.
-            - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
+            - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. 사용자가 “회사 주차장으로 저장해줘”처럼 장소 이름을 지정했다면 userMemory.title에 그 이름을 정확히 넣으세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
             - save_parking: 사용자가 현재 차량의 주차 위치를 기억해 달라고 요청한 경우입니다. “주차한 곳 기억해줘”, “여기 주차했어 기록해줘”, “내 차 위치 메모해줘”가 해당합니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장하며, 최신 주차 기억 하나만 유지합니다.
             - create_schedule: 사용자가 미래의 특정 시각에 일정·리마인더를 등록해 달라고 명확히 요청한 경우입니다. “내일 3시에 회의 기억해줘”, “금요일 오전 10시에 병원 일정 등록해줘”, “1분 뒤 회의 일정 등록해줘”가 해당합니다. 상대 시간이라도 회의·약속·예약·일정·마감처럼 미래 사건을 등록하는 요청이면 이 동작을 선택하세요. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. scheduleDetail에 제목과 정확한 로컬 ISO 8601 시각을 채우세요. 일정은 앱의 단일 일정 데이터로 저장되므로 shouldSaveUserMemory는 false, userMemory는 null로 두세요. 현재 시간 문맥을 기준으로 계산하고, 날짜나 시간이 하나라도 모호하면 이 동작을 선택하지 말고 짧게 되물으세요.
             - start_timer: 사용자가 일정 시각이 아닌 지속 시간 타이머·상대 시간 알림을 요청한 경우입니다. “파스타 8분 타이머”, “30분 뒤 알려줘”, “10초 알람”이 해당합니다. 단, 회의·약속·예약·일정·마감의 등록 요청은 상대 시간이어도 create_schedule입니다. transcript에 전체 질문을 넣고 answer는 빈 문자열로 남기세요. timerDetail에 목적 제목과 초 단위 durationSeconds를 채우세요. durationSeconds는 1~604800 범위여야 합니다.
@@ -199,7 +211,7 @@ struct GeminiService {
             - capture_scene: 사용자가 지금 보고 있는 물건, 메뉴, 문서, 사람, 주변 장면처럼 새 사진을 찍어야만 답할 수 있는 내용을 분석해 달라고 요청한 경우입니다. answer는 빈 문자열로 남기세요.
             - current_time: 사용자가 이 iPhone의 현재 시각, 오늘 날짜, 요일을 물어본 경우입니다. 다른 도시·시간대의 시간은 이 동작을 사용하지 마세요. answer는 빈 문자열로 남기세요. timeDetail에는 time, date, date_time 중 알맞은 값을 넣으세요.
             - weather: 사용자가 현재 위치의 날씨, 오늘·내일 날씨, 특정 시간대의 비·눈·기온을 물어본 경우입니다. answer는 빈 문자열로 남기세요. weatherDetail에는 대화 문맥을 반영해 day와 period를 채우세요. 예를 들어 “오늘 날씨 어때”는 today/day, “내일은?”은 tomorrow/day, “오늘 오후에 비 와?”는 today/afternoon, “지금 비 와?”는 today/current입니다. 다른 지역의 날씨는 이 동작을 사용하지 마세요.
-            - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
+            - save_place: 사용자가 현재 있는 장소를 저장해 달라고 요청한 경우입니다. “여기 기억해줘”, “이 장소 메모해줘”, “지금 있는 곳 기록해줘”처럼 기억해줘·메모해줘·기록해줘 표현과 현재 장소를 함께 말하면 선택하세요. answer는 빈 문자열로 남기세요. 사용자가 “회사 주차장으로 저장해줘”처럼 장소 이름을 지정했다면 userMemory.title에 그 이름을 정확히 넣으세요. 앱이 안경 사진과 현재 위치를 직접 저장합니다.
             - save_parking: 사용자가 현재 차량의 주차 위치를 기억해 달라고 요청한 경우입니다. “주차한 곳 기억해줘”, “여기 주차했어 기록해줘”, “내 차 위치 메모해줘”가 해당합니다. answer는 빈 문자열로 남기세요. 앱이 안경 사진과 현재 위치를 직접 저장하며, 최신 주차 기억 하나만 유지합니다.
             - create_schedule: 사용자가 미래의 특정 시각에 일정·리마인더를 등록해 달라고 명확히 요청한 경우입니다. “내일 3시에 회의 기억해줘”, “금요일 오전 10시에 병원 일정 등록해줘”, “1분 뒤 회의 일정 등록해줘”가 해당합니다. 상대 시간이라도 회의·약속·예약·일정·마감처럼 미래 사건을 등록하는 요청이면 이 동작을 선택하세요. answer는 빈 문자열로 남기세요. scheduleDetail에 제목과 정확한 로컬 ISO 8601 시각을 채우세요. 일정은 앱의 단일 일정 데이터로 저장되므로 shouldSaveUserMemory는 false, userMemory는 null로 두세요. 현재 시간 문맥을 기준으로 계산하고, 날짜나 시간이 하나라도 모호하면 이 동작을 선택하지 말고 짧게 되물으세요.
             - start_timer: 사용자가 일정 시각이 아닌 지속 시간 타이머·상대 시간 알림을 요청한 경우입니다. “파스타 8분 타이머”, “30분 뒤 알려줘”, “10초 알람”이 해당합니다. 단, 회의·약속·예약·일정·마감의 등록 요청은 상대 시간이어도 create_schedule입니다. answer는 빈 문자열로 남기세요. timerDetail에 목적 제목과 초 단위 durationSeconds를 채우세요. durationSeconds는 1~604800 범위여야 합니다.
@@ -239,7 +251,8 @@ struct GeminiService {
             timeDetail: result.timeDetail,
             weatherDetail: result.weatherDetail,
             scheduleDetail: result.scheduleDetail,
-            timerDetail: result.timerDetail
+            timerDetail: result.timerDetail,
+            memoryReferenceIDs: result.memoryReferenceIDs
         )
     }
 
@@ -263,6 +276,7 @@ struct GeminiService {
             저장했다고 말로만 답하지 마세요.
             true인 경우에만 userMemory를 채우고, 대화 문맥에서 저장할 정보만 정확히 추출하세요.
             userMemory.category는 general, parking, place 중 하나여야 합니다. 장면에서 파악한 차량 주차 위치는 parking으로 분류하세요.
+            사진을 사용자 메모리로 저장하는 경우 userMemory.tags에는 검색용 태그를 최대 8개, userMemory.visualSummary에는 사진에서 실제로 보이는 내용을 한두 문장으로 넣으세요.
             """,
             audioData: nil,
             imageData: imageData,
@@ -279,7 +293,53 @@ struct GeminiService {
             shouldSaveUserMemory: result.shouldSaveUserMemory,
             action: .answer,
             timeDetail: nil,
-            weatherDetail: nil
+            weatherDetail: nil,
+            memoryReferenceIDs: result.memoryReferenceIDs
+        )
+    }
+
+    func analyzeMemoryPhoto(
+        imageData: Data,
+        request: String,
+        title: String,
+        body: String,
+        category: UserMemoryCategory,
+        locationDescription: String?
+    ) async throws -> UserMemoryPhotoAnalysis {
+        let result = try await generate(
+            instruction: """
+            이 요청은 사용자 메모리에 연결된 사진의 검색 색인을 만드는 작업입니다.
+            사진, 사용자 요청, 기존 제목·본문·장소를 함께 보고 userMemory만 작성하세요.
+            userMemory.title은 사용자가 장소 이름을 명시했다면 그 이름을 그대로 우선하고, 아니면 사진에서 확실히 파악되는 짧은 장소 이름을 제안하세요.
+            userMemory.tags에는 검색에 유용한 짧은 한국어 태그를 중복 없이 최대 8개 넣으세요.
+            userMemory.visualSummary에는 사진에서 실제로 확인되는 장소·물체·글자·색상·특징을 검색 가능한 한두 문장으로 쓰세요. 보이지 않는 정보는 추측하지 마세요.
+            action은 answer, shouldSaveUserMemory는 true, memoryReferenceIDs는 빈 배열로 두세요.
+            """,
+            audioData: nil,
+            imageData: imageData,
+            conversation: nil,
+            userMemories: [],
+            schedules: [],
+            userPrompt: """
+            사용자 요청: \(request)
+            기존 제목: \(title)
+            기존 본문: \(body)
+            카테고리: \(category.rawValue)
+            기록 장소: \(locationDescription ?? "위치 미기록")
+            """
+        )
+
+        guard let memory = result.userMemory,
+              let visualSummary = memory.visualSummary,
+              !visualSummary.isEmpty
+        else {
+            throw GeminiServiceError.invalidResponse
+        }
+
+        return UserMemoryPhotoAnalysis(
+            suggestedTitle: memory.title,
+            tags: VoiceMemo.normalizedTags(memory.tags),
+            visualSummary: visualSummary
         )
     }
 
@@ -427,9 +487,10 @@ struct GeminiService {
           "transcript": "사용자 입력의 한국어 전사 또는 텍스트 입력. 이미지 전용이면 빈 문자열",
           "answer": "사용자에게 들려줄 한국어 답변",
           "shouldSaveUserMemory": true 또는 false,
-          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·숫자·조건만 1~3문장으로 요약", "category": "general | parking | place" } 또는 null,
-          "userMemoryUpdate": { "memoryID": "user_memories의 UUID", "title": "수정할 제목", "body": "수정할 본문", "category": "general | parking | place" } 또는 null,
+          "userMemory": { "title": "저장할 주제를 8~20자로 정확히 요약", "body": "사용자가 저장하라고 한 사실·숫자·조건만 1~3문장으로 요약", "category": "general | parking | place", "tags": ["검색 태그"], "visualSummary": "사진이 있으면 사진 속 검색용 설명, 없으면 null" } 또는 null,
+          "userMemoryUpdate": { "memoryID": "user_memories의 UUID", "title": "수정할 제목", "body": "수정할 본문", "category": "general | parking | place", "tags": ["수정 후 태그"] } 또는 null,
           "userMemoryDeletion": { "memoryID": "user_memories의 UUID" } 또는 null,
+          "memoryReferenceIDs": ["답변에 실제로 사용한 user_memories의 UUID"],
           "action": "answer | capture_scene | current_time | weather | save_place | save_parking | create_schedule | start_timer | update_user_memory | delete_user_memory",
           "timeDetail": "time | date | date_time 또는 null",
           "weatherDetail": { "day": "today | tomorrow", "period": "current | morning | afternoon | evening | night | day" } 또는 null,
@@ -438,6 +499,7 @@ struct GeminiService {
         }
 
         "기억해줘", "메모해줘", "기록해줘"는 같은 저장 의도입니다. 단, 미래 일정·리마인더 등록 요청은 create_schedule과 scheduleDetail로만 처리하며 shouldSaveUserMemory는 false, userMemory는 null이어야 합니다. 기존 사용자 메모리의 명확한 수정 요청은 update_user_memory와 userMemoryUpdate로, 삭제 요청은 delete_user_memory와 userMemoryDeletion으로만 처리합니다. 각 memoryID는 반드시 user_memories의 ID와 정확히 일치해야 합니다. 수정·삭제에서는 shouldSaveUserMemory는 false, userMemory는 null이어야 합니다. 대상이 모호하거나 전체 삭제를 요청하면 실행하지 말고 짧게 되물으세요. 그 외 저장 요청은 shouldSaveUserMemory가 반드시 true이고 userMemory는 null이 아니어야 합니다.
+        저장된 사용자 메모리를 찾아 답변에 실제로 사용했다면 memoryReferenceIDs에 해당 ID를 관련도 순으로 최대 5개 넣으세요. 일정 ID, 존재하지 않는 ID, 단순히 참고하지 않은 ID는 넣지 말고 관련 메모리가 없으면 빈 배열을 반환하세요.
         shouldSaveUserMemory가 false이면 userMemory는 반드시 null입니다. true이면 사용자가 저장하려는 내용만 남기고,
         추측하거나 빠진 정보를 보완하지 마세요. 저장할 핵심을 판단할 수 없으면 false로 두고 짧은 확인 질문을 하세요.
         """
@@ -509,7 +571,8 @@ struct GeminiService {
                 timeDetail: payload.timeDetail,
                 weatherDetail: payload.weatherDetail,
                 scheduleDetail: payload.scheduleDetail,
-                timerDetail: payload.timerDetail
+                timerDetail: payload.timerDetail,
+                memoryReferenceIDs: (payload.memoryReferenceIDs ?? []).compactMap { UUID(uuidString: $0) }
             )
         }
 
@@ -581,7 +644,9 @@ struct GeminiService {
                 let place = memory.location.map { location in
                     "[기록 장소: \(location.displayName)] [좌표: \(String(format: "%.5f, %.5f", location.latitude, location.longitude))]"
                 } ?? "[기록 장소: 위치 미기록]"
-                return "[메모리 ID: \(memory.id.uuidString)] [기록 시각: \(formatter.string(from: memory.createdAt))] [분류: \(memory.category.rawValue)] \(place) \(title) — \(body)"
+                let tags = memory.tags.isEmpty ? "[태그: 없음]" : "[태그: \(memory.tags.joined(separator: ", "))]"
+                let visualSummary = memory.visualSummary.map { "[사진 설명: \($0)]" } ?? "[사진 설명: 없음]"
+                return "[메모리 ID: \(memory.id.uuidString)] [기록 시각: \(formatter.string(from: memory.createdAt))] [분류: \(memory.category.rawValue)] \(place) \(tags) \(visualSummary) \(title) — \(body)"
             }
             .joined(separator: "\n")
     }
@@ -745,6 +810,7 @@ private struct AssistantPayload: Decodable {
     let weatherDetail: WeatherRequest?
     let scheduleDetail: ScheduleDraft?
     let timerDetail: TimerDraft?
+    let memoryReferenceIDs: [String]?
 }
 
 private extension String {

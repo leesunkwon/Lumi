@@ -25,7 +25,10 @@ struct ContentView: View {
     @State private var memoryPendingDeletion: VoiceMemo?
     @State private var schedulePendingDeletion: LumiSchedule?
     @State private var memoryEditor: UserMemoryEditor?
+    @State private var selectedMemoryDetail: VoiceMemo?
+    @State private var memoryDisplayMode = UserMemoryDisplayMode.list
     @State private var isShowingClearAllMemoriesConfirmation = false
+    @State private var isShowingPhotoAnalysisConfirmation = false
     @State private var isShowingScheduleEditor = false
     @State private var editingSchedule: LumiSchedule?
     @State private var isShowingSettings = false
@@ -91,6 +94,17 @@ struct ContentView: View {
             Text("저장된 사용자 메모리 전체가 삭제되며 복구할 수 없어요.")
         }
         .confirmationDialog(
+            "기존 사진을 Gemini로 분석할까요?",
+            isPresented: $isShowingPhotoAnalysisConfirmation
+        ) {
+            Button("분석 시작") {
+                viewModel.analyzeExistingMemoryPhotos()
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("아직 색인하지 않은 기존 메모리 사진을 Gemini에 순서대로 전송해 검색용 설명과 태그를 만듭니다. 사진은 분석 요청에 포함돼요.")
+        }
+        .confirmationDialog(
             "일정을 삭제할까요?",
             isPresented: Binding(
                 get: { schedulePendingDeletion != nil },
@@ -134,18 +148,22 @@ struct ContentView: View {
             Text(pendingAction.kind.detail)
         }
         .sheet(item: $memoryEditor) { editor in
-            UserMemoryEditorView(memory: editor.memory) { title, body, category in
+            UserMemoryEditorView(memory: editor.memory) { title, body, category, tags in
                 if let memory = editor.memory {
                     viewModel.updateUserMemory(
                         id: memory.id,
                         title: title,
                         body: body,
-                        category: category
+                        category: category,
+                        tags: tags
                     )
                 } else {
-                    viewModel.addUserMemory(title: title, body: body, category: category)
+                    viewModel.addUserMemory(title: title, body: body, category: category, tags: tags)
                 }
             }
+        }
+        .sheet(item: $selectedMemoryDetail) { memory in
+            UserMemoryDetailView(memory: memory)
         }
         .sheet(isPresented: $isShowingScheduleEditor, onDismiss: {
             editingSchedule = nil
@@ -804,6 +822,20 @@ struct ContentView: View {
                         .lineLimit(4)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if !viewModel.lastReferencedMemories.isEmpty {
+                        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+                            Text("참고한 사용자 메모리")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(SeedColor.fgInverted.opacity(0.58))
+
+                            ForEach(viewModel.lastReferencedMemories) { memory in
+                                UserMemoryReferenceCard(memory: memory) {
+                                    selectedMemoryDetail = memory
+                                }
+                            }
+                        }
+                    }
+
                     HStack {
                         Text("방금 답했어요")
                             .font(.caption)
@@ -1046,6 +1078,11 @@ struct ContentView: View {
                     .padding(.bottom, SeedSpacing.x3)
                     .background(SeedColor.layerDefault)
 
+                memoryDisplayModeControl
+                    .padding(.horizontal, SeedSpacing.globalGutter)
+                    .padding(.bottom, SeedSpacing.x3)
+                    .background(SeedColor.layerDefault)
+
                 if viewModel.hasActiveMemoryFilters {
                     memoryFilterResetControl
                         .padding(.horizontal, SeedSpacing.globalGutter)
@@ -1069,7 +1106,11 @@ struct ContentView: View {
                             tone: .positive
                         )
 
-                        memoryContent
+                        if memoryDisplayMode == .list {
+                            memoryContent
+                        } else {
+                            photoMemoryContent
+                        }
                     }
                     .padding(.horizontal, SeedSpacing.globalGutter)
                     .padding(.top, SeedSpacing.x2)
@@ -1145,6 +1186,9 @@ struct ContentView: View {
 
         return Button {
             viewModel.selectedMemoryCategory = category
+            if category == .schedule {
+                memoryDisplayMode = .list
+            }
         } label: {
             HStack(spacing: SeedSpacing.x1) {
                 if let category {
@@ -1170,6 +1214,18 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(title) 메모리 보기")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var memoryDisplayModeControl: some View {
+        Picker("메모리 보기 방식", selection: $memoryDisplayMode) {
+            ForEach(UserMemoryDisplayMode.allCases) { mode in
+                Label(mode.title, systemImage: mode.symbol)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .disabled(viewModel.selectedMemoryCategory == .schedule)
+        .accessibilityHint("목록과 사진 갤러리 보기를 전환합니다.")
     }
 
     private var memoryDateFilter: some View {
@@ -1333,6 +1389,77 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private var photoMemoryContent: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x4) {
+            if viewModel.unindexedPhotoMemoryCount > 0 || viewModel.isIndexingMemoryPhotos {
+                VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                            Text("사진 속 내용 검색")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(SeedColor.fgNeutral)
+                            Text("기존 사진은 동의한 경우에만 Gemini로 분석해요.")
+                                .font(.caption)
+                                .foregroundStyle(SeedColor.fgMuted)
+                        }
+
+                        Spacer()
+
+                        if !viewModel.isIndexingMemoryPhotos {
+                            Button(viewModel.memoryPhotoIndexFailureCount > 0 ? "실패 항목 재시도" : "기존 사진 분석") {
+                                isShowingPhotoAnalysisConfirmation = true
+                            }
+                            .font(.caption.weight(.bold))
+                            .buttonStyle(.bordered)
+                        }
+                    }
+
+                    if viewModel.isIndexingMemoryPhotos {
+                        ProgressView(
+                            value: Double(viewModel.memoryPhotoIndexCompleted),
+                            total: Double(max(viewModel.memoryPhotoIndexTotal, 1))
+                        )
+                        Text("\(viewModel.memoryPhotoIndexCompleted)/\(viewModel.memoryPhotoIndexTotal) 분석 중")
+                            .font(.caption2)
+                            .foregroundStyle(SeedColor.fgSubtle)
+                    } else if viewModel.memoryPhotoIndexFailureCount > 0 {
+                        Text("\(viewModel.memoryPhotoIndexFailureCount)개 사진을 분석하지 못했어요.")
+                            .font(.caption)
+                            .foregroundStyle(SeedColor.fgMuted)
+                    }
+                }
+                .padding(SeedSpacing.x3)
+                .seedSurface(radius: SeedRadius.r4)
+            }
+
+            if viewModel.filteredPhotoMemos.isEmpty {
+                emptyMemoryState(
+                    symbol: "photo.on.rectangle.angled",
+                    title: "조건에 맞는 사진이 없어요",
+                    detail: "사진이 저장된 장소·주차 메모리만 갤러리에 표시돼요."
+                )
+            } else {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: SeedSpacing.x3),
+                        GridItem(.flexible(), spacing: SeedSpacing.x3)
+                    ],
+                    spacing: SeedSpacing.x3
+                ) {
+                    ForEach(viewModel.filteredPhotoMemos) { memory in
+                        Button {
+                            selectedMemoryDetail = memory
+                        } label: {
+                            UserMemoryGalleryCard(memory: memory)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
     private var memoryEmptyFilterTitle: String {
         if viewModel.selectedMemoryCategory == .schedule { return "등록한 일정이 없어요" }
         if !viewModel.memoSearchQuery.isEmpty { return "검색 결과가 없어요" }
@@ -1391,6 +1518,13 @@ struct ContentView: View {
                         .font(.subheadline)
                         .foregroundStyle(SeedColor.fgMuted)
                         .lineLimit(3)
+                }
+
+                if !memo.tags.isEmpty {
+                    Text(memo.tags.map { "#\($0)" }.joined(separator: "  "))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(SeedColor.fgSubtle)
+                        .lineLimit(2)
                 }
 
                 if let photoFilename = memo.photoFilename {
@@ -1617,6 +1751,27 @@ struct ContentView: View {
 
 }
 
+private enum UserMemoryDisplayMode: String, CaseIterable, Identifiable {
+    case list
+    case photos
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .list: return "목록"
+        case .photos: return "사진"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .photos: return "square.grid.2x2"
+        }
+    }
+}
+
 private struct LumiSettingsView: View {
     let canConnectGlasses: Bool
     let isConnectingGlasses: Bool
@@ -1795,22 +1950,24 @@ private struct ScheduleEditorView: View {
 
 private struct UserMemoryEditorView: View {
     let memory: VoiceMemo?
-    let onSave: (String, String, UserMemoryCategory) -> Void
+    let onSave: (String, String, UserMemoryCategory, [String]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var memoryBody: String
     @State private var category: UserMemoryCategory
+    @State private var tagText: String
 
     init(
         memory: VoiceMemo?,
-        onSave: @escaping (String, String, UserMemoryCategory) -> Void
+        onSave: @escaping (String, String, UserMemoryCategory, [String]) -> Void
     ) {
         self.memory = memory
         self.onSave = onSave
         _title = State(initialValue: memory?.title ?? "")
         _memoryBody = State(initialValue: memory?.body ?? "")
         _category = State(initialValue: memory?.category ?? .general)
+        _tagText = State(initialValue: memory?.tags.joined(separator: ", ") ?? "")
     }
 
     private var canSave: Bool {
@@ -1855,6 +2012,15 @@ private struct UserMemoryEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Section("태그") {
+                    TextField("예: 카페, 아이디어, 부산", text: $tagText)
+                        .textInputAutocapitalization(.never)
+
+                    Text("쉼표로 구분해 최대 8개까지 저장해요. 공백과 중복은 자동으로 정리됩니다.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             .navigationTitle(memory == nil ? "메모리 추가" : "메모리 편집")
             .navigationBarTitleDisplayMode(.inline)
@@ -1867,7 +2033,8 @@ private struct UserMemoryEditorView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("저장") {
-                        onSave(title, memoryBody, category)
+                        let tags = tagText.split(separator: ",").map(String.init)
+                        onSave(title, memoryBody, category, tags)
                         dismiss()
                     }
                     .disabled(!canSave)
@@ -1884,6 +2051,7 @@ private struct UserMemoryEditorView: View {
 private struct ConversationDetailView: View {
     @Bindable var viewModel: LumiViewModel
     let conversationID: UUID
+    @State private var selectedMemoryDetail: VoiceMemo?
 
     private let bottomAnchor = "conversation-bottom"
 
@@ -1934,6 +2102,9 @@ private struct ConversationDetailView: View {
         }
         .navigationTitle(conversation?.title ?? "대화")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedMemoryDetail) { memory in
+            UserMemoryDetailView(memory: memory)
+        }
     }
 
     private var emptyConversationState: some View {
@@ -1978,6 +2149,14 @@ private struct ConversationDetailView: View {
                         message.role == .user ? SeedColor.brand : SeedColor.layerFill,
                         in: RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
                     )
+
+                if message.role == .assistant {
+                    ForEach(viewModel.referencedMemories(for: message)) { memory in
+                        UserMemoryReferenceCard(memory: memory) {
+                            selectedMemoryDetail = memory
+                        }
+                    }
+                }
 
                 Text(message.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
@@ -2047,6 +2226,214 @@ private struct ConversationPhotoThumbnail: View {
     }
 }
 
+private struct UserMemoryReferenceCard: View {
+    let memory: VoiceMemo
+    let onOpen: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+            Button(action: onOpen) {
+                HStack(alignment: .top, spacing: SeedSpacing.x2_5) {
+                    if let filename = memory.photoFilename,
+                       let image = UserMemoryPhotoStore.image(for: filename) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: SeedRadius.r2_5, style: .continuous))
+                    } else {
+                        Image(systemName: memory.category.symbol)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(SeedColor.brand)
+                            .frame(width: 48, height: 48)
+                            .background(SeedColor.brandWeak, in: RoundedRectangle(cornerRadius: SeedRadius.r2_5, style: .continuous))
+                    }
+
+                    VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                        Text(memory.title)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(SeedColor.fgNeutral)
+                            .lineLimit(2)
+                        Text("\(memory.category.title) · \(memory.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(SeedColor.fgSubtle)
+                        if let location = memory.location {
+                            Label(location.displayName, systemImage: "mappin")
+                                .font(.caption)
+                                .foregroundStyle(SeedColor.fgMuted)
+                                .lineLimit(1)
+                        }
+                        if !memory.tags.isEmpty {
+                            Text(memory.tags.prefix(4).map { "#\($0)" }.joined(separator: "  "))
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(SeedColor.fgSubtle)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SeedColor.fgSubtle)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if let directionsURL = memory.location?.directionsURL {
+                Link(destination: directionsURL) {
+                    Label("Apple 지도 길찾기", systemImage: "arrow.triangle.turn.up.right.diamond")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(SeedColor.brand)
+            }
+        }
+        .padding(SeedSpacing.x3)
+        .background(SeedColor.layerDefault, in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous)
+                .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+        }
+    }
+}
+
+private struct UserMemoryGalleryCard: View {
+    let memory: VoiceMemo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+            Group {
+                if let filename = memory.photoFilename,
+                   let image = UserMemoryPhotoStore.image(for: filename) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.title2)
+                        .foregroundStyle(SeedColor.fgSubtle)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(1.1, contentMode: .fit)
+            .background(SeedColor.layerFill)
+            .clipped()
+
+            VStack(alignment: .leading, spacing: SeedSpacing.x1) {
+                Text(memory.title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(SeedColor.fgNeutral)
+                    .lineLimit(1)
+                Text(memory.createdAt.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption2)
+                    .foregroundStyle(SeedColor.fgSubtle)
+                if let location = memory.location {
+                    Text(location.displayName)
+                        .font(.caption2)
+                        .foregroundStyle(SeedColor.fgMuted)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, SeedSpacing.x2)
+            .padding(.bottom, SeedSpacing.x2)
+        }
+        .background(SeedColor.layerDefault, in: RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SeedRadius.r4, style: .continuous)
+                .stroke(SeedColor.strokeSubtle, lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(memory.title), \(memory.createdAt.formatted(date: .abbreviated, time: .omitted))")
+    }
+}
+
+private struct UserMemoryDetailView: View {
+    let memory: VoiceMemo
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: SeedSpacing.x4) {
+                    if let filename = memory.photoFilename {
+                        UserMemoryPhotoThumbnail(filename: filename)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+                        Label(memory.category.title, systemImage: memory.category.symbol)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(SeedColor.brand)
+                        Text(memory.title)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(SeedColor.fgNeutral)
+                        Text(memory.body)
+                            .font(.body)
+                            .foregroundStyle(SeedColor.fgMuted)
+                    }
+
+                    if !memory.tags.isEmpty {
+                        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+                            Text("태그")
+                                .font(.headline)
+                            Text(memory.tags.map { "#\($0)" }.joined(separator: "  "))
+                                .font(.subheadline)
+                                .foregroundStyle(SeedColor.fgMuted)
+                        }
+                    }
+
+                    if let visualSummary = memory.visualSummary {
+                        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+                            Text("사진 속 내용")
+                                .font(.headline)
+                            Text(visualSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(SeedColor.fgMuted)
+                        }
+                    }
+
+                    if let location = memory.location {
+                        VStack(alignment: .leading, spacing: SeedSpacing.x2) {
+                            Text("기록 장소")
+                                .font(.headline)
+                            Label(location.displayName, systemImage: "mappin.and.ellipse")
+                                .font(.subheadline)
+                                .foregroundStyle(SeedColor.fgMuted)
+                            HStack(spacing: SeedSpacing.x3) {
+                                if let mapURL = location.mapURL {
+                                    Link("지도에서 보기", destination: mapURL)
+                                }
+                                if let directionsURL = location.directionsURL {
+                                    Link("길찾기", destination: directionsURL)
+                                }
+                            }
+                            .font(.subheadline.weight(.semibold))
+                        }
+                    }
+
+                    Label(
+                        memory.createdAt.formatted(date: .complete, time: .shortened),
+                        systemImage: "clock"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(SeedColor.fgSubtle)
+                }
+                .padding(SeedSpacing.globalGutter)
+            }
+            .background(SeedColor.layerBasement)
+            .navigationTitle("사용자 메모리")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("완료") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct UserMemoryLocationSummary: View {
     let location: UserMemoryLocation
     let distance: CLLocationDistance?
@@ -2076,6 +2463,14 @@ private struct UserMemoryLocationSummary: View {
                 if let mapURL = location.mapURL {
                     Link(destination: mapURL) {
                         Label("지도", systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(SeedColor.brand)
+                }
+
+                if let directionsURL = location.directionsURL {
+                    Link(destination: directionsURL) {
+                        Label("길찾기", systemImage: "arrow.triangle.turn.up.right.diamond")
                             .font(.caption.weight(.semibold))
                     }
                     .foregroundStyle(SeedColor.brand)
@@ -2137,6 +2532,14 @@ private struct UserMemoryLocationPreview: View {
                 if let mapURL = location.mapURL {
                     Link(destination: mapURL) {
                         Label("지도에서 열기", systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(SeedColor.brand)
+                }
+
+                if let directionsURL = location.directionsURL {
+                    Link(destination: directionsURL) {
+                        Label("길찾기", systemImage: "arrow.triangle.turn.up.right.diamond")
                             .font(.caption.weight(.semibold))
                     }
                     .foregroundStyle(SeedColor.brand)
