@@ -99,4 +99,7 @@ struct PendingLumiAction: Identifiable {
     let conversation: ConversationSession?
     let userMemories: [VoiceMemo]
     let schedules: [LumiSchedule]
+    let scenePhotoData: Data?
+    let userMemoryPhotoData: Data?
+    let userMemoryLocation: UserMemoryLocation?
 }

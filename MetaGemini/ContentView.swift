@@ -629,6 +629,48 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
+
+                if !viewModel.sceneFollowUps.isEmpty {
+                    VStack(alignment: .leading, spacing: SeedSpacing.x2_5) {
+                        HStack(spacing: SeedSpacing.x1_5) {
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(SeedColor.brand)
+                            Text("방금 장면으로 이어서 하기")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(SeedColor.fgNeutral)
+                        }
+
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: SeedSpacing.x2),
+                                GridItem(.flexible(), spacing: SeedSpacing.x2)
+                            ],
+                            spacing: SeedSpacing.x2
+                        ) {
+                            ForEach(viewModel.sceneFollowUps) { followUp in
+                                Button {
+                                    viewModel.performSceneFollowUp(followUp)
+                                } label: {
+                                    Label(followUp.title, systemImage: followUp.symbol)
+                                        .font(.caption.weight(.semibold))
+                                        .frame(maxWidth: .infinity, minHeight: 38)
+                                }
+                                .buttonStyle(SeedActionButtonStyle(variant: .neutralWeak, size: .medium))
+                                .disabled(viewModel.isBusy || viewModel.isRegistering)
+                                .accessibilityHint("방금 촬영한 장면을 바탕으로 \(followUp.title) 요청을 실행합니다.")
+                            }
+                        }
+
+                        Text("모든 제안은 방금 촬영한 사진을 바탕으로 처리하고, 장소 저장에는 현재 위치를 함께 기록해요.")
+                            .font(.caption2)
+                            .foregroundStyle(SeedColor.fgSubtle)
+                    }
+                    .padding(SeedSpacing.x3)
+                    .background(
+                        SeedColor.brandWeak,
+                        in: RoundedRectangle(cornerRadius: SeedRadius.r3, style: .continuous)
+                    )
+                }
             } else {
                 Button(action: performVoiceAction) {
                     HStack(spacing: SeedSpacing.x2) {
@@ -1783,6 +1825,11 @@ private struct LumiSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(LumiPreferences.confirmBeforeActionKey) private var confirmsActionsBeforeExecution = true
     @AppStorage(LumiPreferences.experimentalKeyboardInputKey) private var isExperimentalKeyboardInputEnabled = false
+    @AppStorage(LumiPreferences.responseToneKey) private var responseToneRawValue = LumiResponseTone.jarvis.rawValue
+
+    private var responseTone: LumiResponseTone {
+        LumiResponseTone(rawValue: responseToneRawValue) ?? .jarvis
+    }
 
     var body: some View {
         NavigationStack {
@@ -1791,6 +1838,23 @@ private struct LumiSettingsView: View {
                     Toggle("실행 전 확인", isOn: $confirmsActionsBeforeExecution)
 
                     Text("일정, 타이머, 장소·주차 기억, 사용자 메모리를 실행하거나 저장하기 전에 한 번 더 확인해요.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("답변 톤") {
+                    Picker("답변 톤", selection: $responseToneRawValue) {
+                        ForEach(LumiResponseTone.allCases) { tone in
+                            Text(tone.title)
+                                .tag(tone.rawValue)
+                        }
+                    }
+
+                    Text(responseTone.description)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Text("다음 텍스트 답변과 음성 답변부터 적용돼요.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

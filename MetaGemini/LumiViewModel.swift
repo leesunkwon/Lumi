@@ -10,6 +10,33 @@ import MWDATCore
 import Observation
 import UIKit
 
+enum SceneFollowUp: CaseIterable, Identifiable {
+    case translate
+    case remember
+    case savePlace
+    case savePurchaseCandidate
+
+    var id: String { title }
+
+    var title: String {
+        switch self {
+        case .translate: return "번역"
+        case .remember: return "기억"
+        case .savePlace: return "이 장소 저장"
+        case .savePurchaseCandidate: return "구매 후보로 추가"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .translate: return "character.book.closed"
+        case .remember: return "bookmark"
+        case .savePlace: return "mappin.and.ellipse"
+        case .savePurchaseCandidate: return "cart"
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class LumiViewModel {
@@ -23,6 +50,7 @@ final class LumiViewModel {
     var lastTranscript: String?
     var lastAnswer: String?
     var lastReferencedMemoryIDs: [UUID] = []
+    var sceneFollowUps: [SceneFollowUp] = []
     var conversations: [ConversationSession] = []
     var activeConversationID: UUID?
     var memoSearchQuery = ""
@@ -54,6 +82,10 @@ final class LumiViewModel {
 
     var isBusy: Bool {
         isStartingVoice || isRecording || isProcessing || isCapturingScene || isSpeaking || pendingAction != nil
+    }
+
+    private var responseTone: LumiResponseTone {
+        LumiPreferences.responseTone
     }
 
     var filteredMemos: [VoiceMemo] {
@@ -133,6 +165,7 @@ final class LumiViewModel {
     @ObservationIgnored private let memoryLocationProvider = CurrentLocationProvider()
     @ObservationIgnored private let notificationScheduler = LumiNotificationScheduler()
     @ObservationIgnored private let glassesCamera: GlassesCamera
+    @ObservationIgnored private var lastScenePhotoData: Data?
     @ObservationIgnored private var registrationTask: Task<Void, Never>?
     @ObservationIgnored private var devicesTask: Task<Void, Never>?
     @ObservationIgnored private var waitingSoundTask: Task<Void, Never>?
@@ -293,7 +326,8 @@ final class LumiViewModel {
                     question,
                     conversation: conversation,
                     userMemories: userMemories,
-                    schedules: currentSchedules
+                    schedules: currentSchedules,
+                    tone: responseTone
                 )
                 try await handleVoiceIntent(
                     intentResult,
@@ -317,7 +351,8 @@ final class LumiViewModel {
     func describeScene() {
         analyzeScene(
             question: "지금 보는 장면을 설명해줘.",
-            fallbackUserMessage: "지금 보는 장면을 설명해줘."
+            fallbackUserMessage: "지금 보는 장면을 설명해줘.",
+            showsFollowUps: true
         )
     }
 
@@ -330,6 +365,28 @@ final class LumiViewModel {
             """,
             fallbackUserMessage: "사진 속 텍스트를 한국어로 번역해줘."
         )
+    }
+
+    func performSceneFollowUp(_ followUp: SceneFollowUp) {
+        switch followUp {
+        case .translate:
+            analyzeLastScene(
+                question: "사진에서 읽을 수 있는 텍스트를 찾아 자연스러운 한국어로 번역해줘. 메뉴나 문서라면 보이는 순서대로 핵심 내용을 빠뜨리지 않고 번역해줘.",
+                fallbackUserMessage: "방금 촬영한 사진 속 텍스트를 한국어로 번역해줘."
+            )
+        case .remember:
+            analyzeLastScene(
+                question: "방금 촬영한 사진에서 기억할 핵심을 사용자 메모리에 저장해줘. 저장할 내용을 짧고 정확하게 요약하고 검색용 태그와 사진 설명도 작성해줘.",
+                fallbackUserMessage: "방금 촬영한 장면을 기억해줘."
+            )
+        case .savePlace:
+            saveLastScenePlace()
+        case .savePurchaseCandidate:
+            analyzeLastScene(
+                question: "방금 촬영한 물건을 구매 후보로 사용자 메모리에 저장해줘. 보이는 제품명, 특징, 추정할 수 없는 정보는 제외하고, 비교 검색에 유용한 태그와 사진 설명을 작성해줘.",
+                fallbackUserMessage: "방금 촬영한 물건을 구매 후보로 기억해줘."
+            )
+        }
     }
 
     func saveCurrentPlace() {
@@ -369,7 +426,49 @@ final class LumiViewModel {
         }
     }
 
-    private func analyzeScene(question: String, fallbackUserMessage: String) {
+    private func saveLastScenePlace() {
+        guard !isBusy, isGlassesAvailable, let photoData = lastScenePhotoData else { return }
+        isProcessing = true
+        startWaitingSounds()
+        let conversationID = activeConversationID
+        let conversation = conversation(for: conversationID)
+        let userMemories = memos
+        let currentSchedules = upcomingSchedules
+        let request = AssistantResult(
+            transcript: "방금 촬영한 장소를 사진과 위치로 저장해줘.",
+            answer: "",
+            userMemory: nil,
+            shouldSaveUserMemory: false,
+            action: .savePlace,
+            timeDetail: nil,
+            weatherDetail: nil
+        )
+
+        Task {
+            do {
+                try await handleVoiceIntent(
+                    request,
+                    conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules,
+                    scenePhotoData: photoData
+                )
+            } catch {
+                isCapturingScene = false
+                isProcessing = false
+                isSpeaking = false
+                stopWaitingSounds()
+                show(error)
+            }
+        }
+    }
+
+    private func analyzeScene(
+        question: String,
+        fallbackUserMessage: String,
+        showsFollowUps: Bool = false
+    ) {
         guard !isBusy, isGlassesAvailable else { return }
         isCapturingScene = true
         startWaitingSounds()
@@ -381,17 +480,63 @@ final class LumiViewModel {
         Task {
             do {
                 let photoData = try await glassesCamera.capturePhoto()
+                if showsFollowUps {
+                    lastScenePhotoData = photoData
+                    sceneFollowUps = SceneFollowUp.allCases
+                }
                 let result = try await gemini.describeScene(
                     question: question,
                     imageData: photoData,
                     conversation: conversation,
                     userMemories: userMemories,
-                    schedules: currentSchedules
+                    schedules: currentSchedules,
+                    tone: responseTone
                 )
-                try await deliver(
+                try await handleVoiceIntent(
                     result,
-                    fallbackUserMessage: fallbackUserMessage,
                     conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules,
+                    originalUserMessage: fallbackUserMessage,
+                    scenePhotoData: photoData,
+                    userMemoryPhotoData: result.shouldSaveUserMemory ? photoData : nil
+                )
+            } catch {
+                isCapturingScene = false
+                isSpeaking = false
+                stopWaitingSounds()
+                show(error)
+            }
+        }
+    }
+
+    private func analyzeLastScene(question: String, fallbackUserMessage: String) {
+        guard !isBusy, let photoData = lastScenePhotoData else { return }
+        isCapturingScene = true
+        startWaitingSounds()
+        let conversationID = activeConversationID
+        let conversation = conversation(for: conversationID)
+        let userMemories = memos
+        let currentSchedules = upcomingSchedules
+
+        Task {
+            do {
+                let result = try await gemini.describeScene(
+                    question: question,
+                    imageData: photoData,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules,
+                    tone: responseTone
+                )
+                try await handleVoiceIntent(
+                    result,
+                    conversationID: conversationID,
+                    conversation: conversation,
+                    userMemories: userMemories,
+                    schedules: currentSchedules,
+                    originalUserMessage: fallbackUserMessage,
                     scenePhotoData: photoData,
                     userMemoryPhotoData: result.shouldSaveUserMemory ? photoData : nil
                 )
@@ -640,6 +785,9 @@ final class LumiViewModel {
                     conversation: pendingAction.conversation,
                     userMemories: pendingAction.userMemories,
                     schedules: pendingAction.schedules,
+                    scenePhotoData: pendingAction.scenePhotoData,
+                    userMemoryPhotoData: pendingAction.userMemoryPhotoData,
+                    storedMemoryLocation: pendingAction.userMemoryLocation,
                     bypassingActionConfirmation: true
                 )
             } catch {
@@ -851,7 +999,8 @@ final class LumiViewModel {
                         audioURL: audioURL,
                         conversation: conversation,
                         userMemories: userMemories,
-                        schedules: currentSchedules
+                        schedules: currentSchedules,
+                        tone: responseTone
                     )
                     try await handleVoiceIntent(
                         intentResult,
@@ -881,10 +1030,16 @@ final class LumiViewModel {
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
         schedules: [LumiSchedule],
+        originalUserMessage: String? = nil,
+        scenePhotoData: Data? = nil,
+        userMemoryPhotoData: Data? = nil,
+        storedMemoryLocation: UserMemoryLocation? = nil,
         bypassingActionConfirmation: Bool = false
     ) async throws {
         let userQuestion = result.transcript?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackUserMessage = (userQuestion?.isEmpty == false ? userQuestion : nil) ?? "음성 질문"
+        let fallbackUserMessage = originalUserMessage
+            ?? (userQuestion?.isEmpty == false ? userQuestion : nil)
+            ?? "음성 질문"
 
         if !bypassingActionConfirmation,
            LumiPreferences.confirmsActionsBeforeExecution,
@@ -896,7 +1051,10 @@ final class LumiViewModel {
                 conversationID: conversationID,
                 conversation: conversation,
                 userMemories: userMemories,
-                schedules: schedules
+                schedules: schedules,
+                scenePhotoData: scenePhotoData,
+                userMemoryPhotoData: userMemoryPhotoData,
+                userMemoryLocation: storedMemoryLocation
             )
             isProcessing = false
             isCapturingScene = false
@@ -922,6 +1080,10 @@ final class LumiViewModel {
                     conversation: conversation,
                     userMemories: userMemories,
                     schedules: schedules,
+                    originalUserMessage: fallbackUserMessage,
+                    scenePhotoData: scenePhotoData,
+                    userMemoryPhotoData: userMemoryPhotoData,
+                    storedMemoryLocation: storedMemoryLocation,
                     bypassingActionConfirmation: bypassingActionConfirmation
                 )
             } else if let fallbackSchedule = relativeScheduleDraft(
@@ -944,13 +1106,20 @@ final class LumiViewModel {
                     conversation: conversation,
                     userMemories: userMemories,
                     schedules: schedules,
+                    originalUserMessage: fallbackUserMessage,
+                    scenePhotoData: scenePhotoData,
+                    userMemoryPhotoData: userMemoryPhotoData,
+                    storedMemoryLocation: storedMemoryLocation,
                     bypassingActionConfirmation: bypassingActionConfirmation
                 )
             } else {
                 try await deliver(
                     result,
                     fallbackUserMessage: fallbackUserMessage,
-                    conversationID: conversationID
+                    conversationID: conversationID,
+                    scenePhotoData: scenePhotoData,
+                    userMemoryPhotoData: userMemoryPhotoData,
+                    userMemoryLocation: storedMemoryLocation
                 )
             }
 
@@ -980,12 +1149,16 @@ final class LumiViewModel {
                 imageData: photoData,
                 conversation: conversation,
                 userMemories: userMemories,
-                schedules: schedules
+                schedules: schedules,
+                tone: responseTone
             )
-            try await deliver(
+            try await handleVoiceIntent(
                 visualResult,
-                fallbackUserMessage: fallbackUserMessage,
                 conversationID: conversationID,
+                conversation: conversation,
+                userMemories: userMemories,
+                schedules: schedules,
+                originalUserMessage: fallbackUserMessage,
                 scenePhotoData: photoData,
                 userMemoryPhotoData: visualResult.shouldSaveUserMemory ? photoData : nil
             )
@@ -1010,10 +1183,15 @@ final class LumiViewModel {
             )
 
         case .savePlace:
-            isProcessing = false
-            isCapturingScene = true
+            isProcessing = scenePhotoData != nil
+            isCapturingScene = scenePhotoData == nil
 
-            let photoData = try await glassesCamera.capturePhoto()
+            let photoData: Data
+            if let scenePhotoData {
+                photoData = scenePhotoData
+            } else {
+                photoData = try await glassesCamera.capturePhoto()
+            }
             let location = try await locationProvider.currentLocation()
             currentMemoryLocation = location
             let memoryLocation = await userMemoryLocation(from: location)
@@ -1058,10 +1236,15 @@ final class LumiViewModel {
             )
 
         case .saveParking:
-            isProcessing = false
-            isCapturingScene = true
+            isProcessing = scenePhotoData != nil
+            isCapturingScene = scenePhotoData == nil
 
-            let photoData = try await glassesCamera.capturePhoto()
+            let photoData: Data
+            if let scenePhotoData {
+                photoData = scenePhotoData
+            } else {
+                photoData = try await glassesCamera.capturePhoto()
+            }
             let location = try await locationProvider.currentLocation()
             currentMemoryLocation = location
             let memoryLocation = await userMemoryLocation(from: location)
@@ -1288,7 +1471,7 @@ final class LumiViewModel {
             userMemoryPhotoData: userMemoryPhotoData,
             userMemoryLocation: userMemoryLocation
         )
-        let speech = try await gemini.synthesizeSpeech(result.answer)
+        let speech = try await gemini.synthesizeSpeech(result.answer, tone: responseTone)
         stopWaitingSounds()
         isProcessing = false
         isCapturingScene = false

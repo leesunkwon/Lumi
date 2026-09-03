@@ -151,7 +151,8 @@ struct GeminiService {
         audioURL: URL,
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
-        schedules: [LumiSchedule]
+        schedules: [LumiSchedule],
+        tone: LumiResponseTone = .jarvis
     ) async throws -> AssistantResult {
         let audioData = try Data(contentsOf: audioURL)
         return try await generate(
@@ -188,6 +189,7 @@ struct GeminiService {
             conversation: conversation,
             userMemories: userMemories,
             schedules: schedules,
+            tone: tone,
             userPrompt: "음성 질문을 전사하고 요청을 처리해 주세요."
         )
     }
@@ -196,7 +198,8 @@ struct GeminiService {
         _ question: String,
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
-        schedules: [LumiSchedule]
+        schedules: [LumiSchedule],
+        tone: LumiResponseTone = .jarvis
     ) async throws -> AssistantResult {
         let normalizedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuestion.isEmpty else {
@@ -237,6 +240,7 @@ struct GeminiService {
             conversation: conversation,
             userMemories: userMemories,
             schedules: schedules,
+            tone: tone,
             userPrompt: "사용자 텍스트 질문: \(normalizedQuestion)"
         )
 
@@ -261,7 +265,8 @@ struct GeminiService {
         imageData: Data,
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
-        schedules: [LumiSchedule]
+        schedules: [LumiSchedule],
+        tone: LumiResponseTone = .jarvis
     ) async throws -> AssistantResult {
         let result = try await generate(
             instruction: """
@@ -283,6 +288,7 @@ struct GeminiService {
             conversation: conversation,
             userMemories: userMemories,
             schedules: schedules,
+            tone: tone,
             userPrompt: "사용자 요청: \(question)"
         )
 
@@ -343,7 +349,10 @@ struct GeminiService {
         )
     }
 
-    func synthesizeSpeech(_ text: String) async throws -> SynthesizedSpeech {
+    func synthesizeSpeech(
+        _ text: String,
+        tone: LumiResponseTone = .jarvis
+    ) async throws -> SynthesizedSpeech {
         let apiKey = try requireAPIKey()
         let transcript = text
             .replacingOccurrences(of: "</transcript>", with: "")
@@ -363,6 +372,7 @@ struct GeminiService {
         # DIRECTOR'S NOTES
         Speak in natural standard Korean. Sound warm, friendly, and conversational rather than like an announcer.
         Use a relaxed, slightly brisk pace with short natural pauses. Keep the volume and emotion even.
+        \(tone.speechDirection)
         Pronounce numbers and English words clearly. Do not read these directions or add any words.
 
         # TRANSCRIPT
@@ -438,6 +448,7 @@ struct GeminiService {
         conversation: ConversationSession?,
         userMemories: [VoiceMemo],
         schedules: [LumiSchedule],
+        tone: LumiResponseTone = .jarvis,
         userPrompt: String
     ) async throws -> AssistantResult {
         let apiKey = try requireAPIKey()
@@ -452,6 +463,7 @@ struct GeminiService {
 
         answer는 음성으로 들었을 때 자연스러운 한국어 구어체로 작성하세요. 짧고 완결된 문장을 사용하고,
         Markdown 기호, URL, 이모지, 표처럼 소리 내어 읽기 어려운 표현은 사용하지 마세요.
+        \(tone.responseInstruction)
 
         아래는 현재 대화 세션의 시작·최근 갱신 시각과 앞서 나눈 메시지입니다. 현재 질문에 도움이 될 때만 자연스럽게 참고하고,
         메시지 기록 시각은 “아까”, “어제”, “지난주” 같은 상대 시간의 문맥을 해석할 때 현재 시간과 비교해 사용하세요.
