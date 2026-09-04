@@ -28,6 +28,14 @@ playground.xcworkspace
 **/Secrets.xcconfig
 !**/Secrets.xcconfig.example
 
+# Android local machine settings and credentials
+**/local.properties
+!**/local.properties.example
+**/.gradle/
+**/build/
+**/.idea/
+*.iml
+
 # Fastlane output
 fastlane/report.xml
 fastlane/Preview.html

@@ -200,6 +200,16 @@ Lumi는 개인 정보가 필요한 순간을 가능한 한 분명하게 드러�
 
 ## 시작하기
 
+### Android
+
+Android 앱은 `android/LumiAndroid`에 있습니다. iOS와 데이터는 동기화하지 않으며, 대화·메모리·일정·타이머와 사진은 Android 기기 내부에만 저장됩니다.
+
+1. `android/LumiAndroid/local.properties.example`을 참고해 기존 `local.properties`에 아래 값을 추가합니다. `sdk.dir`은 그대로 유지합니다.
+2. Debug 빌드에서만 `GEMINI_API_KEY`, `KMA_WEATHER_API_KEY`를 사용합니다. Release 빌드는 두 키를 빈 값으로 고정합니다.
+3. Meta Wearables Device Access Toolkit을 사용하려면 `github_token`에 GitHub Packages `read:packages` 권한 토큰을 넣고, 실제 배포용이라면 Wearables Developer Center의 `MWDAT_APPLICATION_ID`, `MWDAT_CLIENT_TOKEN`을 입력합니다. Developer Mode에서는 두 값 모두 `0`으로 둘 수 있습니다.
+
+`local.properties`에는 실제 키, SDK 경로, GitHub 토큰을 보관하며 Git에 추가하지 않습니다. 저장소에는 `local.properties.example`만 유지합니다.
+
 ### 요구 사항
 
 - Xcode에서 현재 프로젝트의 배포 대상인 iOS 26.5 이상을 실행할 수 있는 iPhone

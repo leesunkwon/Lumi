@@ -1,0 +1,10 @@
+# Keep the real local.properties out of Git. Preserve your sdk.dir line there.
+# Development-only keys are injected into the Debug BuildConfig.
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+KMA_WEATHER_API_KEY=YOUR_KMA_WEATHER_API_KEY
+
+# Meta Wearables Device Access Toolkit. github_token needs read:packages scope.
+github_token=YOUR_GITHUB_PACKAGES_TOKEN
+# Developer Mode may use 0 for both values.
+MWDAT_APPLICATION_ID=0
+MWDAT_CLIENT_TOKEN=0

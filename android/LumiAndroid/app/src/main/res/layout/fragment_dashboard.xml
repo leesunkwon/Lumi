@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Lumi" android:textColor="@color/lumi_text" android:textSize="30sp" android:textStyle="bold" />
+                <TextView android:id="@+id/status_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="준비됨" android:textColor="@color/lumi_muted" android:textSize="14sp" />
+            </LinearLayout>
+            <com.google.android.material.button.MaterialButton android:id="@+id/settings_button" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="설정" app:iconGravity="textStart" />
+        </LinearLayout>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp"
+            app:cardBackgroundColor="@color/lumi_weak" app:cardCornerRadius="24dp" app:strokeWidth="0dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ray-Ban Meta" android:textColor="@color/lumi_text" android:textSize="18sp" android:textStyle="bold" />
+                <TextView android:id="@+id/glasses_status_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="연결하면 장면 촬영을 사용할 수 있어요." android:textColor="@color/lumi_muted" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/connect_glasses_button" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="안경 연결" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView android:id="@+id/error_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:background="#FFFFE7E5" android:padding="14dp" android:textColor="#FF9B1C1C" android:visibility="gone" />
+        <TextView android:id="@+id/answer_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:background="@color/lumi_layer" android:padding="18dp" android:textColor="@color/lumi_text" android:textSize="16sp" android:visibility="gone" />
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="AI 제어" android:textColor="@color/lumi_text" android:textSize="19sp" android:textStyle="bold" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton android:id="@+id/scene_button" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="장면 설명" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/translate_button" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:text="카메라 번역" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton android:id="@+id/place_button" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="이 장소 저장" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/parking_button" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:text="주차 기억" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/text_input_row" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="horizontal" android:visibility="gone">
+            <EditText android:id="@+id/question_input" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:background="@color/lumi_layer" android:hint="Lumi에게 물어보세요" android:inputType="textMultiLine" android:maxLines="3" android:padding="14dp" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/send_button" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="전송" />
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/microphone_button" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="음성으로 질문" />
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="진행 중인 타이머" android:textColor="@color/lumi_text" android:textSize="19sp" android:textStyle="bold" />
+        <LinearLayout android:id="@+id/timer_container" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="vertical" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="다가오는 일정" android:textColor="@color/lumi_text" android:textSize="19sp" android:textStyle="bold" />
+        <LinearLayout android:id="@+id/schedule_container" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="vertical" />
+    </LinearLayout>
+</ScrollView>

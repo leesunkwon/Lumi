@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/tab_dashboard" android:icon="@drawable/ic_sparkle" android:title="Lumi" />
+    <item android:id="@+id/tab_conversations" android:icon="@drawable/ic_chat" android:title="대화" />
+    <item android:id="@+id/tab_schedules" android:icon="@drawable/ic_calendar" android:title="일정" />
+    <item android:id="@+id/tab_memories" android:icon="@drawable/ic_bookmark" android:title="메모리" />
+</menu>

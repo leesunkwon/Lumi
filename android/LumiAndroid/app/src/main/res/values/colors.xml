@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="lumi_primary">#3659D6</color>
+    <color name="lumi_on_primary">#FFFFFFFF</color>
+    <color name="lumi_surface">#F8F8FC</color>
+    <color name="lumi_layer">#FFFFFFFF</color>
+    <color name="lumi_text">#1B1B22</color>
+    <color name="lumi_muted">#6B6B78</color>
+    <color name="lumi_outline">#E2E2EC</color>
+    <color name="lumi_weak">#EDF1FF</color>
+    <selector name="navigation_tint">
+        <item android:color="@color/lumi_primary" android:state_checked="true" />
+        <item android:color="@color/lumi_muted" />
+    </selector>
 </resources>
